@@ -1,4 +1,7 @@
 #include "UGL.hpp"
+#include "imgui.h"
+#include "backends/imgui_impl_glut.h"
+#include "backends/imgui_impl_opengl3.h"
 
 CAMERA camera;
 LIGHT lightA;
@@ -8,11 +11,11 @@ void keyboard(unsigned char key, int x, int y) {
     switch (key) {
         case 'w':
         case 'W':
-            camera.moveForward(0.2);
+            camera.moveForward(1.0f);
             break;
         case 's':
         case 'S':
-            camera.moveBackward(0.2);
+            camera.moveBackward(1.0f);
             break;
         case 'a':
         case 'A':
@@ -31,6 +34,8 @@ void reshape(int width, int height) {
     glViewport(0, 0, width, height);
     camera._viewportWidth = width;
     camera._viewportHeight = height;
+    ImGuiIO& io = ImGui::GetIO(); 
+    io.DisplaySize = ImVec2((float)width, (float)height);
 }
 
 void PERSPECTIVE_VIEW() {
@@ -51,15 +56,7 @@ void CAMERA_VIEW() {
 	gluLookAt(eye.x, eye.y, eye.z, center.x, center.y, center.z, up.x, up.y, up.z);
 }
 
-void display() {
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-    PERSPECTIVE_VIEW();
-    CAMERA_VIEW();
-
-    lightA.Set();
-    model.Draw(lightA, camera);
-    // X, Y, Z axis line with R, G, B color
+void DRAW_AXIS() {
     glDisable(GL_LIGHTING);
     glBegin(GL_LINES);
     glColor3f(1.0, 0.0, 0.0);
@@ -73,18 +70,68 @@ void display() {
     glVertex3f(0.0, 0.0, 10.0);
     glEnd();
     glEnable(GL_LIGHTING);
+}
+
+void DRAW_WORLD() {
+    lightA.Set();
+    model.Draw(lightA, camera);
+}
+
+void DRAW_GUI() {
+    ImGui_ImplOpenGL3_NewFrame();
+    ImGui_ImplGLUT_NewFrame();
+
+    ImGui::NewFrame();
+    ImGui::Begin("GAME MAKING");
+    if (ImGui::Button("오브젝트 추가")) {
+        printf("Button was pressed.\n");
+    }
+    if (ImGui::Button("오브젝트 삭제")) {
+		printf("Button was pressed.\n");
+	}
+    if (ImGui::Button("오브젝트 속성")) {
+        printf("Button was pressed.\n");
+    }
+    ImGui::End();
+    ImGui::Render();
+    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+}
+
+void display() {
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    PERSPECTIVE_VIEW();
+    CAMERA_VIEW();
     
+    DRAW_AXIS();
+    DRAW_WORLD();
+    DRAW_GUI();
+
     glutSwapBuffers(); 
+}
+
+void imguiInit() {
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO();
+    ImGui::StyleColorsDark();
+
+    ImGui_ImplGLUT_Init();
+    ImGui_ImplGLUT_InstallFuncs();
+    ImGui_ImplOpenGL3_Init("#version 130");
 }
 
 int main(int argc, char** argv) {
     glutInit(&argc, argv);
     glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH);
 
-    glutInitWindowSize(800, 600);
+    int windowWidth = 800;
+    int windowHeight = 600;
+    glutInitWindowSize(windowWidth, windowHeight);
     glutCreateWindow("OpenGL");
 
     glewInit();
+    imguiInit();
 
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_LIGHTING);
@@ -94,9 +141,14 @@ int main(int argc, char** argv) {
     glutDisplayFunc(display);
     glutKeyboardFunc(keyboard);
 
+    reshape(windowWidth, windowHeight);
+
     model.LoadFBX("D:\\projects\\OpenGL\\OpenGL\\untitled.fbx");
 
     glutMainLoop();
 
+    ImGui_ImplOpenGL3_Shutdown();
+    ImGui_ImplGLUT_Shutdown();
+    ImGui::DestroyContext();
     return 0;
 }
