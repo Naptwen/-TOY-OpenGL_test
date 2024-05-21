@@ -80,17 +80,25 @@ void DRAW_WORLD() {
 void DRAW_GUI() {
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplGLUT_NewFrame();
+    ImGuiIO& io = ImGui::GetIO();
 
     ImGui::NewFrame();
-    ImGui::Begin("GAME MAKING");
-    if (ImGui::Button("오브젝트 추가")) {
+    ImGui::SetNextWindowPos(ImVec2(0, 0));
+    ImGui::SetNextWindowSize({ io.DisplaySize.x * 0.25f, io.DisplaySize.y});
+    ImGui::Begin("GAME MAKING", NULL, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
+    int buttonWidth = 150;
+    int buttonHeight = 25;
+    if (ImGui::Button("Object Add", ImVec2(buttonWidth, buttonHeight))) {
         printf("Button was pressed.\n");
+        glutPostRedisplay();
     }
-    if (ImGui::Button("오브젝트 삭제")) {
+    if (ImGui::Button("Object Del", ImVec2(buttonWidth, buttonHeight))) {
 		printf("Button was pressed.\n");
+        glutPostRedisplay();
 	}
-    if (ImGui::Button("오브젝트 속성")) {
+    if (ImGui::Button("Object Attr", ImVec2(buttonWidth, buttonHeight))) {
         printf("Button was pressed.\n");
+        glutPostRedisplay();
     }
     ImGui::End();
     ImGui::Render();
@@ -114,7 +122,9 @@ void imguiInit() {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
-    ImGui::StyleColorsDark();
+    ImGui::SetNextWindowSize(io.DisplaySize);
+    ImGui::SetNextWindowPos(ImVec2(0, 0));
+    ImGui::StyleColorsLight();
 
     ImGui_ImplGLUT_Init();
     ImGui_ImplGLUT_InstallFuncs();
@@ -125,8 +135,8 @@ int main(int argc, char** argv) {
     glutInit(&argc, argv);
     glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH);
 
-    int windowWidth = 800;
-    int windowHeight = 600;
+    int windowWidth = 1204;
+    int windowHeight = 624;
     glutInitWindowSize(windowWidth, windowHeight);
     glutCreateWindow("OpenGL");
 
