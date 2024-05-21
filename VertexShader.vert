@@ -17,6 +17,6 @@ void main()
     vec4 worldPos = model * vec4(mPos, 1.0);
     gl_Position = projection * view * worldPos;
     FragPos = worldPos.xyz;
-    Normal = mat3(transpose(inverse(model))) * mNormal;
+    Normal = mat3(transpose(inverse(model * view))) * mNormal;
     LightDir = normalize(lightPos - FragPos); // Direction to the light source
 }

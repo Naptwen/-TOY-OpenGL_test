@@ -29,6 +29,8 @@ void keyboard(unsigned char key, int x, int y) {
 
 void reshape(int width, int height) {
     glViewport(0, 0, width, height);
+    camera._viewportWidth = width;
+    camera._viewportHeight = height;
 }
 
 void PERSPECTIVE_VIEW() {
@@ -94,10 +96,7 @@ int main(int argc, char** argv) {
 
     model.LoadFBX("D:\\projects\\OpenGL\\OpenGL\\untitled.fbx");
 
-    while (true) {
-        glutMainLoopEvent();
-    }
-
+    glutMainLoop();
 
     return 0;
 }

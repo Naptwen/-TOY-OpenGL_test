@@ -59,7 +59,7 @@ struct CAMERA {
 	glm::vec3 _front = {-1.0f, -1.0f, -1.0f};
 	glm::vec3 _up = { 0.0f, 1.0f, 0.0f };
 	float _zoom = 1.0f;
-	float _near = 0.001f;
+	float _near = 0.1f;
 	float _far = 1000.0f;
 	float _speed = 2.0f;
 	int _viewportWidth = 800;
