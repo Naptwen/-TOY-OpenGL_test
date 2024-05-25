@@ -6,7 +6,8 @@ in vec3 LightDir;
 
 out vec4 FragColor;
 
-uniform vec3 lightColor; // Light color
+uniform vec3 objectColor;
+uniform vec3 lightColor;
 
 void main()
 {
@@ -19,6 +20,6 @@ void main()
     float diff = max(dot(norm, LightDir), 0.0);
     vec3 diffuse = diff * lightColor;
 
-    vec3 result = (ambient + diffuse) * vec3(1.0, 1.0, 1.0);
+    vec3 result = (ambient + diffuse) * objectColor;
     FragColor = vec4(result, 1.0);
 }
