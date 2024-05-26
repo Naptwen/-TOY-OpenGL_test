@@ -27,14 +27,10 @@ unsigned int compileShader(unsigned int type, const char* source) {
 	if (result == GL_FALSE) {
 		int length;
 		glGetShaderiv(id, GL_INFO_LOG_LENGTH, &length);
-		char* message = (char*)alloca(length * sizeof(char));
-		glGetShaderInfoLog(id, length, &length, message);
 		std::cout << "Failed to compile " << (type == GL_VERTEX_SHADER ? "vertex" : "fragment") << " shader!" << std::endl;
-		std::cout << message << std::endl;
 		glDeleteShader(id);
 		return 0;
 	}
-
 	return id;
 }
 
@@ -55,75 +51,110 @@ unsigned int createShader(const char* vertexShader, const char* fragmentShader) 
 }
 
 struct CAMERA {
-	glm::vec3 _position = { 100.0f, 100.0f, 100.0f };
+	glm::vec3 _eye = { 30.f, 30.0f, 30.0f };
 	glm::vec3 _front = { -1.0f, -1.0f, -1.0f };
 	glm::vec3 _up = { 0.0f, 1.0f, 0.0f };
-	float _zoom = 1.0f;
+	float _fovy = 15.0f;
 	float _near = 0.1f;
 	float _far = 10000.0f;
-	float _speed = 2.0f;
+	float _speed = 10.0f;
+	float _rot_speed = 0.2f;
+	float _yaw = 0.0f;
+	float _pitch = 0.0f;
 	int _viewportWidth = 800;
 	int _viewportHeight = 600;
 
-	std::tuple<GLdouble, GLdouble, GLdouble, GLdouble> getPerspectiveParameters() {
-		return std::make_tuple(_zoom, static_cast<GLdouble>(_viewportWidth) / _viewportHeight, _near, _far);
-	}
-
-	std::tuple<glm::vec3, glm::vec3, glm::vec3> getLookAtParameters() {
-		glm::vec3 lookAt = _position + _front;
-		return std::make_tuple(_position, lookAt, _up);
+	void CameraPrintf() const {
+		printf("Camera position: (%f, %f, %f)\n",
+			_eye.x, _eye.y, _eye.z);
+		printf("Camera front: (%f, %f, %f)\n",
+			_front.x, _front.y, _front.z);
+		printf("Camera vec: (%f, %f, %f)\n",
+			_eye.x - _front.x, _eye.y - _front.y, _eye.z - _front.z);
+		glm::vec3 vec = glm::normalize(_front - _eye);
+		printf("Camera vec : (%f, %f, %f)\n", vec.x, vec.y, vec.z);
 	}
 
 	void moveForward(float deltaTime) {
-		_position += _speed * _front * deltaTime;
+		_eye += _speed * _front * deltaTime;
+		CameraPrintf();
 	}
 
 	void moveBackward(float deltaTime) {
-		_position -= _speed * _front * deltaTime;
+		_eye -= _speed * _front * deltaTime;
+		CameraPrintf();
 	}
 
 	void moveLeft(float deltaTime) {
-		_position -= glm::normalize(glm::cross(_front, _up)) * _speed * deltaTime;
+		_eye -= glm::normalize(glm::cross(_front, _up)) * _speed * deltaTime;
+		CameraPrintf();
 	}
 
 	void moveRight(float deltaTime) {
-		_position += glm::normalize(glm::cross(_front, _up)) * _speed * deltaTime;
+		_eye += glm::normalize(glm::cross(_front, _up)) * _speed * deltaTime;
+		CameraPrintf();
 	}
 
 	void moveUp(float deltaTime) {
-		_position += _speed * _up * deltaTime;
+		_eye += _speed * _up * deltaTime;
+		CameraPrintf();
 	}
 
 	void moveDown(float deltaTime) {
-		_position -= _speed * _up * deltaTime;
+		_eye -= _speed * _up * deltaTime;
+		CameraPrintf();
 	}
+	void rotation(float yawOffset, float pitchOffset) {
+		yawOffset *= _rot_speed;
+		pitchOffset *= _rot_speed;
+		printf("Yaw: %f, Pitch: %f\n", yawOffset, pitchOffset);
+		// Yaw (Z axis)
+		glm::mat4 yawMatrix = glm::rotate(glm::mat4(1.0f), glm::radians(yawOffset), glm::vec3(0.0f, 0.0f, 1.0f));
+		// Pitch (Y axis)
+		glm::mat4 pitchMatrix = glm::rotate(glm::mat4(1.0f), glm::radians(pitchOffset), glm::vec3(0.0f, 1.0f, 0.0f));
+		// Roll (X axis)
+		glm::mat4 rollMatrix = glm::rotate(glm::mat4(1.0f), 0.0f, glm::vec3(1.0f, 0.0f, 0.0f));
 
-	int getViewportWidth() {
+		glm::mat4 rotationMatrix = yawMatrix * pitchMatrix * rollMatrix;
+
+		glm::vec4 transformedVec = rotationMatrix * glm::vec4(_front, 1.0f);
+
+		_front = glm::vec3(transformedVec);
+		CameraPrintf();
+	}
+	int getViewportWidth() const {
 		return _viewportWidth;
 	}
-	int getViewportHeight() {
+	int getViewportHeight()  const {
 		return _viewportHeight;
 	}
-	glm::vec3 getPosition() {
-		return _position;
+	glm::vec3 getPosition()  const {
+		return _eye;
 	}
-	glm::vec3 getFront() {
+	glm::vec3 getFront() const {
 		return _front;
 	}
+	glm::vec3 getUp() const {
+		return _up;
+	}
+	glm::vec3 getRight() const {
+		return glm::normalize(glm::cross(_front, _up));
+	}
 	glm::mat4 getProjectionMatrix() const {
-		return glm::perspective(glm::radians(_zoom), static_cast<float>(_viewportWidth) / _viewportHeight, _near, _far);
+		float aspect = static_cast<float>(_viewportWidth) / _viewportHeight;
+		return glm::perspective(glm::radians(_fovy), aspect, _near, _far);
 	}
 	glm::mat4 getViewMatrix() const {
-		return glm::lookAt(_position, _position + _front, _up);
+		return glm::lookAt(_eye, _eye + _front, _up);
 	}
 };
 
 struct LIGHT {
-	glm::vec3 _position = { 1.0f, 10.0f, 15.0f };
+	glm::vec3 _eye = { 1.0f, 10.0f, 15.0f };
 	glm::vec3 _color = { 1.0f, 1.0f, 1.0f };
 
 	void Set() {
-		GLfloat lightPosition[] = { _position.x, _position.y, _position.z, 1.0f };
+		GLfloat lightPosition[] = { _eye.x, _eye.y, _eye.z, 1.0f };
 		GLfloat lightColor[] = { _color.x, _color.y, _color.z, 1.0f };
 		glLightfv(GL_LIGHT0, GL_POSITION, lightPosition);
 		glLightfv(GL_LIGHT0, GL_DIFFUSE, lightColor);
@@ -135,40 +166,37 @@ struct MODEL {
 public:
 
 	virtual void Init(const std::string&) = 0;
-	glm::vec3 getProperty_Position() {
-		return _position;
+
+	std::string getName() const {
+		return name;
+	}
+	glm::vec3 getProperty_Position() const {
+		return _eye;
 	}
 	void setProperty_Position(glm::vec3 position) {
-		_position = position;
+		_eye = position;
 	}
-	glm::vec3 getProperty_RotationAxis() {
+	glm::vec3 getProperty_RotationAxis() const {
 		return _rotationAxis;
 	}
 	void setProperty_RotationAxis(glm::vec3 rotationAxis) {
 		_rotationAxis = rotationAxis;
 	}
-	float getProperty_Rotation() {
-		return _rotation;
-	}
-	void setProperty_Rotation(float rotation) {
-		_rotation = rotation;
-	}
-	glm::vec3 getProperty_Scale() {
+	glm::vec3 getProperty_Scale() const {
 		return _scale;
 	}
 	void setProperty_Scale(glm::vec3 scale) {
 		_scale = scale;
 	}
-	glm::vec3 getColor(){
+	glm::vec3 getColor() const {
 		return _color;
 	}
 	void setColor(glm::vec3 color) {
 		_color = color;
 	}
-
-	bool InterSection(glm::vec3 rayOrigin, glm::vec3 rayDirection) {
-		glm::vec3 min = _position;
-		glm::vec3 max = _position + _scale;
+	bool InterSection(glm::vec3 rayOrigin, glm::vec3 rayDirection) const {
+		glm::vec3 min = _eye;
+		glm::vec3 max = _eye + _scale;
 		float tmin = (min.x - rayOrigin.x) / rayDirection.x;
 		float tmax = (max.x - rayOrigin.x) / rayDirection.x;
 
@@ -196,7 +224,6 @@ public:
 
 		return tmax >= 0;
 	}
-
 	void Draw(const LIGHT& light, const CAMERA& camera) const {
 		GLint currentShader;
 		glGetIntegerv(GL_CURRENT_PROGRAM, &currentShader);
@@ -204,22 +231,26 @@ public:
 		glUseProgram(shaderProgram);
 		// 모델 행렬 설정
 		glm::mat4 model = glm::mat4(1.0f);
-		model = glm::translate(model, _position);
-		model = glm::rotate(model, glm::radians(_rotation), _rotationAxis);
+		model = glm::translate(model, _eye);
+		glm::mat4 rotationX = glm::rotate(glm::mat4(1.0f), glm::radians(_rotationAxis[0]), glm::vec3(1, 0, 0));
+		glm::mat4 rotationY = glm::rotate(glm::mat4(1.0f), glm::radians(_rotationAxis[1]), glm::vec3(0, 1, 0));
+		glm::mat4 rotationZ = glm::rotate(glm::mat4(1.0f), glm::radians(_rotationAxis[2]), glm::vec3(0, 0, 1));
+		glm::mat4 rotation = rotationZ * rotationY * rotationX;
+		model = model * rotation;
 		model = glm::scale(model, _scale);
 		int modelLocation = glGetUniformLocation(shaderProgram, "model");
 		glUniformMatrix4fv(modelLocation, 1, GL_FALSE, glm::value_ptr(model));
 		// 뷰 행렬 설정
-		glm::mat4 view = glm::lookAt(camera._position, camera._position + camera._front, camera._up);
+		glm::mat4 view = camera.getViewMatrix();
 		int viewLocation = glGetUniformLocation(shaderProgram, "view");
 		glUniformMatrix4fv(viewLocation, 1, GL_FALSE, glm::value_ptr(view));
 		// 투영 행렬 설정
-		glm::mat4 projection = glm::perspective(glm::radians(camera._zoom), (float)camera._viewportWidth / (float)camera._viewportHeight, camera._near, camera._far);
+		glm::mat4 projection = camera.getProjectionMatrix();
 		int projectionLocation = glGetUniformLocation(shaderProgram, "projection");
 		glUniformMatrix4fv(projectionLocation, 1, GL_FALSE, glm::value_ptr(projection));
 		// Light position 설정
 		int lightPosLocation = glGetUniformLocation(shaderProgram, "lightPos");
-		glUniform3fv(lightPosLocation, 1, glm::value_ptr(light._position));
+		glUniform3fv(lightPosLocation, 1, glm::value_ptr(light._eye));
 		// Light color 설정
 		int lightColorLocation = glGetUniformLocation(shaderProgram, "lightColor");
 		glUniform3fv(lightColorLocation, 1, glm::value_ptr(light._color));
@@ -228,14 +259,14 @@ public:
 		glUniform3fv(colorLocation, 1, glm::value_ptr(_color));
 		// 그리기 실행
 		glBindVertexArray(VAO);
-		glDrawArrays(GL_TRIANGLES, 0, vertexCount);
+		glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(vertexCount));
 		// 쉐이더 해제
 		glUseProgram(currentShader);
 	}
 
 protected:
 	std::string name;
-	GLuint VAO, VBO, CBO, NBO, TBO;
+	GLuint VAO = 0, VBO = 0, CBO = 0, NBO = 0, TBO = 0;
 	size_t vertexCount;
 	unsigned int shaderProgram;
 	std::vector<float> vertices;
@@ -243,9 +274,8 @@ protected:
 	std::vector<float> textures;
 
 	glm::vec3 _color = { 1.0f, 1.0f, 1.0f };
-	glm::vec3 _position = { 0.0f, 0.0f, 0.0f };
-	glm::vec3 _rotationAxis = { 0.0f, 1.0f, 0.0f };
-	float _rotation = 0.0f;
+	glm::vec3 _eye = { 0.0f, 0.0f, 0.0f };
+	glm::vec3 _rotationAxis = { 0.0f, 0.0f, 0.0f };
 	glm::vec3 _scale = { 1.0f, 1.0f, 1.0f };
 
 	std::string ReadShaderFile(const std::string& filename) {
@@ -253,10 +283,8 @@ protected:
 		if (!_file.is_open()) {
 			throw std::runtime_error("Failed to open shader file: " + filename);
 		}
-
 		std::stringstream _buffer;
 		_buffer << _file.rdbuf();
-
 		return _buffer.str();
 	}
 	void Set() {
@@ -287,6 +315,7 @@ protected:
 
 struct KEYBOARD {
 	CAMERA* camera;
+	float pressDuration = 0.0f;
 	KEYBOARD(CAMERA* camera) : camera(camera) {}
 
 	void active(unsigned char key, int x, int y) {
@@ -308,20 +337,24 @@ struct KEYBOARD {
 			camera->moveRight(0.5f);
 			break;
 		}
-		printf("Camera position: (%f, %f, %f)\n", camera->_position.x, camera->_position.y, camera->_position.z);
 	}
 };
 
 struct EDITOR {
 	std::vector<std::shared_ptr<MODEL>> models;
 	std::shared_ptr<MODEL> selectedModel = nullptr;
+	std::string currentPath;
+	bool fileBrowser = false;
 };
 
 struct MOUSE {
 	std::shared_ptr<CAMERA> camera;
 	bool _isDragging = false;
+	bool _isRotating = false;
 	int _lastX = 0;
 	int _lastY = 0;
+	float pressDuration = 0.0f;
+	float sensitivity = 0.1f;
 
 	MOUSE(CAMERA* camera) : camera(camera) {}
 
@@ -336,6 +369,16 @@ struct MOUSE {
 				_isDragging = false;
 			}
 		}
+		else if (button == GLUT_RIGHT_BUTTON) {
+			if (state == GLUT_DOWN) {
+				_isRotating = true;
+				_lastX = x;
+				_lastY = y;
+			}
+			else if (state == GLUT_UP) {
+				_isRotating = false;
+			}
+		}
 		else if (button == GLUT_LEFT_BUTTON) {
 			if (state == GLUT_DOWN) {
 				select(x, y, editor);
@@ -343,7 +386,7 @@ struct MOUSE {
 		}
 	}
 
-	void select(int x, int y, EDITOR& editor) {
+	void select(int x, int y, EDITOR& editor) const {
 		float ndcX = (2.0f * x) / camera->getViewportWidth() - 1.0f;
 		float ndcY = 1.0f - (2.0f * y) / camera->getViewportHeight();
 
@@ -355,20 +398,12 @@ struct MOUSE {
 		glm::vec3 rayDirection = glm::vec3(glm::inverse(camera->getViewMatrix()) * rayEye);
 		rayDirection = glm::normalize(rayDirection);
 
-		editor.selectedModel = nullptr;
-
-		for (auto& model : editor.models) {
-			model->setColor({ 1.0f, 1.0f, 1.0f });
-		}
-
 		for (auto& model : editor.models) {
 			if (model->InterSection(rayOrigin, rayDirection)) {
 				editor.selectedModel = model;
-				editor.selectedModel->setColor({ 1.0f, 0.0f, 0.0f });
 				break;
 			}
 		}
-
 	}
 
 	void motion(int x, int y) {
@@ -380,9 +415,19 @@ struct MOUSE {
 			_lastX = x;
 			_lastY = y;
 		}
+		else if (_isRotating) {
+			float xoffset = static_cast<float>((x - _lastX) > 0 ? -1 : 1);
+			float yoffset = static_cast<float>((_lastY - y) > 0 ? -1 : 1);
+			_lastX = x;
+			_lastY = y;
+			camera->rotation(yoffset, xoffset);
+		}
+		else {
+			pressDuration = 0.0f;
+		}
 	}
 	
-	void scroll(int wheel, int direction, int x, int y) {
+	void scroll(int wheel, int direction, int x, int y) const {
 		if (direction > 0) {
 			camera->moveForward(2.0f);
 		}
@@ -580,6 +625,8 @@ struct FBX : public MODEL
 	}
 
 	void Init(const std::string& filename) final {
+		name = filename;
+		
 		FbxManager* manager = FbxManager::Create();
 		FbxIOSettings* ios = FbxIOSettings::Create(manager, IOSROOT);
 		manager->SetIOSettings(ios);

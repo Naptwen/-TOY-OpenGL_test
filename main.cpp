@@ -48,25 +48,22 @@ void reshape(int width, int height) {
 }
 
 void PERSPECTIVE_VIEW() {
-	glMatrixMode(GL_PROJECTION);
-	glLoadIdentity();
-
-	GLdouble _zoom, _aspect, _near, _far;
-	std::tie(_zoom, _aspect, _near, _far) = camera.getPerspectiveParameters();
-	gluPerspective(_zoom, _aspect, _near, _far);
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    auto projectMatrix = camera.getProjectionMatrix();
+    glLoadMatrixf(glm::value_ptr(projectMatrix));
 }
 
 void CAMERA_VIEW() {
 	glMatrixMode(GL_MODELVIEW);
 	glLoadIdentity();
-
-	glm::vec3 eye, center, up;
-	std::tie(eye, center, up) = camera.getLookAtParameters();
-	gluLookAt(eye.x, eye.y, eye.z, center.x, center.y, center.z, up.x, up.y, up.z);
+    auto viewMatrix = camera.getViewMatrix();
+    glLoadMatrixf(glm::value_ptr(viewMatrix));
 }
 
 void DRAW_AXIS() {
     glDisable(GL_LIGHTING);
+
     glBegin(GL_LINES);
     glColor3f(1.0, 0.0, 0.0);
     glVertex3f(0.0, 0.0, 0.0);
@@ -78,6 +75,27 @@ void DRAW_AXIS() {
     glVertex3f(0.0, 0.0, 0.0);
     glVertex3f(0.0, 0.0, 1000.0);
     glEnd();
+
+    int gridSize = 100; 
+    float cellSize = 100.0f / gridSize;
+    glColor3f(0.5f, 0.5f, 0.5f);
+    for (int i = -gridSize / 2; i < gridSize / 2; ++i) {
+        for (int j = -gridSize / 2; j < gridSize / 2; ++j) {
+            glBegin(GL_LINE_LOOP); // 각 셀을 그립니다.
+            glVertex3f(i * cellSize, 0.0f, j * cellSize);
+            glVertex3f((i + 1) * cellSize, 0.0f, j * cellSize);
+            glVertex3f((i + 1) * cellSize, 0.0f, (j + 1) * cellSize);
+            glVertex3f(i * cellSize, 0.0f, (j + 1) * cellSize);
+            glEnd();
+        }
+    }
+    // draw line from camera to eye
+    glBegin(GL_LINES);
+    glColor3f(1.0, 1.0, 1.0);
+    glVertex3f(camera._eye.x, camera._eye.y, camera._eye.z);
+    glVertex3f(camera._front.x, camera._front.y, camera._front.z);
+    glEnd();
+
     glEnable(GL_LIGHTING);
 }
 
@@ -97,24 +115,112 @@ void DRAW_GUI() {
     ImGui::SetNextWindowPos(ImVec2(0, 0));
     ImGui::SetNextWindowSize({ io.DisplaySize.x * 0.25f, io.DisplaySize.y});
     ImGui::Begin("GAME MAKING", NULL, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
-    int buttonWidth = 150;
-    int buttonHeight = 25;
-    if (ImGui::Button("Object Add", ImVec2(buttonWidth, buttonHeight))) {
-        printf("Button was pressed.\n");
+    float buttonWidth = 150;
+    float buttonHeight = 25;
+    ImGui::Text("Models:");
+    if (ImGui::BeginListBox("##models_list"))
+    {
+        for (auto& model : editor.models)
+        {
+            std::string modelName = model->getName();
+            if (modelName.empty()) {
+                modelName = "##empty_id";
+            }
+            if (ImGui::Selectable(modelName.c_str()))
+            {
+                printf("Selected %s\n", modelName.c_str());
+                editor.selectedModel = model;
+                model->setColor({ 1.0, 0.0, 0.0 });
+                break;
+            }
+        }
+        ImGui::EndListBox();
     }
-    if (ImGui::Button("Object Del", ImVec2(buttonWidth, buttonHeight))) {
-		printf("Button was pressed.\n");
-	}
+
+    ImGui::Text("Property");
+    if (ImGui::Button("Object Add", ImVec2(buttonWidth, buttonHeight))) {
+        editor.models.push_back(std::make_unique<CUBE>());
+        editor.models.back()->Init("");
+    }
+    if (editor.selectedModel != nullptr) {
+
+        for (auto& model : editor.models)
+        {
+			if (model == editor.selectedModel)
+                model->setColor({ 1.0, 0.0, 0.0 });
+            else
+                model->setColor({ 1.0, 1.0, 1.0 });
+		}
+
+        if (ImGui::Button("Object Del", ImVec2(buttonWidth, buttonHeight))) {
+            auto it = std::find_if(editor.models.begin(), editor.models.end(), 
+            [&](const auto& model) {
+                return model == editor.selectedModel;
+                });
+            if (it != editor.models.end()) {
+                it->reset();
+                editor.models.erase(it);
+            }
+            editor.selectedModel = nullptr;
+        }
+    }
+    else {
+        for (auto& model : editor.models)
+        {
+            model->setColor({ 1.0, 1.0, 1.0 });
+        }
+
+        ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * 0.5f);
+        ImGui::Button("Object Del", ImVec2(buttonWidth, buttonHeight));
+        ImGui::PopStyleVar();
+    }
     if (ImGui::Button("Object Attr", ImVec2(buttonWidth, buttonHeight))) {
         printf("Button was pressed.\n");
     }
-    
+    if (ImGui::Button("File Browser", ImVec2(buttonWidth, buttonHeight))) {
+        editor.fileBrowser = !editor.fileBrowser;
+	}
+    if (editor.fileBrowser)
+    {
+        if (editor.currentPath.empty())
+        {
+            editor.currentPath = std::filesystem::current_path().string() + "\\Resource";
+        }
+        if (ImGui::Begin("File Browser"))
+        {
+            ImGui::Text("Current Path: %s", editor.currentPath.c_str());
+            if (ImGui::BeginListBox("##file_list"))
+            {
+                for (const auto& entry : std::filesystem::directory_iterator(editor.currentPath))
+                {
+                    if (entry.path().extension() == ".fbx")
+                    {
+                        if (ImGui::Selectable(entry.path().filename().string().c_str()))
+                        {
+                            if (entry.is_directory())
+                            {
+                                editor.currentPath = entry.path().string();
+                            }
+                            else
+                            {
+                                editor.models.push_back(std::make_unique<FBX>());
+                                editor.models.back()->Init(entry.path().string());
+                                editor.fileBrowser = false;
+                                break;
+                            }
+                        }
+                    }
+                }
+                ImGui::EndListBox();
+            }
+            ImGui::End();
+        }
+    }
     if (editor.selectedModel != nullptr)
     {
         ImGui::Text("Selected Model's Properties");
         glm::vec3 pos = editor.selectedModel->getProperty_Position();
         glm::vec3 rot_axis = editor.selectedModel->getProperty_RotationAxis();
-        float rot = editor.selectedModel->getProperty_Rotation();
         glm::vec3 scale = editor.selectedModel->getProperty_Scale();
 
         if (ImGui::InputFloat3("Position", glm::value_ptr(pos))) {
@@ -124,10 +230,6 @@ void DRAW_GUI() {
         if (ImGui::InputFloat3("RotationAxis", glm::value_ptr(rot_axis))) {
             printf("rot_axis changed\n");
             editor.selectedModel->setProperty_RotationAxis(rot_axis);
-        }
-        if (ImGui::InputFloat("Rotation", &rot)) {
-            printf("rot changed\n");
-            editor.selectedModel->setProperty_Rotation(rot);
         }
         if (ImGui::InputFloat3("Scale", glm::value_ptr(scale))) {
             printf("scale changed\n");
@@ -193,15 +295,10 @@ int main(int argc, char** argv) {
 
     reshape(windowWidth, windowHeight);
 
-    //model.LoadFBX("D:\\projects\\OpenGL\\OpenGL\\untitled.fbx");
-
     editor.models.push_back(std::make_unique<CUBE>());
     editor.models.push_back(std::make_unique<CUBE>());
-    editor.models.push_back(std::make_unique<FBX>());
     editor.models.at(0)->Init("");
     editor.models.at(1)->Init("");
-    std::static_pointer_cast<FBX>(editor.models.at(2))->Init("D:\\projects\\OpenGL\\OpenGL\\test.fbx");
-
     editor.models.back()->setProperty_Position({ 0.0, 1.0, 0.0 });
 
     glutMainLoop();
