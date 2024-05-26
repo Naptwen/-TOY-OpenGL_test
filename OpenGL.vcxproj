@@ -137,6 +137,7 @@
     <ClCompile Include="backends\imgui_impl_glut.cpp" />
     <ClCompile Include="backends\imgui_impl_opengl3.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="UPHYSIC.hpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="backends\imgui_impl_glut.h" />

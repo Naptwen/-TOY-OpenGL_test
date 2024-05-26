@@ -61,6 +61,20 @@ void CAMERA_VIEW() {
     glLoadMatrixf(glm::value_ptr(viewMatrix));
 }
 
+void PHYSICS_PIPE() {
+    for (size_t i = 0; i < editor.models.size(); ++i) {
+        for (size_t j = i + 1; j < editor.models.size(); ++j) {
+            if (editor.models[i]->collider == nullptr || editor.models[j]->collider == nullptr) {
+				continue;
+			}
+            if (CollisionChecking(*editor.models[i]->collider, *editor.models[j]->collider)) {
+                editor.models[i]->setColor({ 0.0, 0.5, 1.0 });
+                editor.models[j]->setColor({ 0.0, 0.5, 1.0 });
+			}
+        }
+    }
+}
+
 void DRAW_AXIS() {
     glDisable(GL_LIGHTING);
 
@@ -89,20 +103,32 @@ void DRAW_AXIS() {
             glEnd();
         }
     }
-    // draw line from camera to eye
-    glBegin(GL_LINES);
-    glColor3f(1.0, 1.0, 1.0);
-    glVertex3f(camera._eye.x, camera._eye.y, camera._eye.z);
-    glVertex3f(camera._front.x, camera._front.y, camera._front.z);
-    glEnd();
 
     glEnable(GL_LIGHTING);
 }
 
+void DRAW_COLLIDER() {
+    glDisable(GL_LIGHTING);
+    for (auto& model : editor.models) {
+        if (model->collider == nullptr) {
+            continue;
+        }
+        if (model->collider->type == COLLIDER_TYPE::SPHERE) {
+            SPHERE_COLLIDER* sphereCollider = dynamic_cast<SPHERE_COLLIDER*>(model->collider.get());
+            sphereCollider->DRAW();
+        }
+        else if (model->collider->type == COLLIDER_TYPE::BOX) {
+            BOX_COLLIDER* boxCollider = dynamic_cast<BOX_COLLIDER*>(model->collider.get());
+            boxCollider->DRAW();
+        }
+    }
+    glDisable(GL_BLEND);
+}
+
 void DRAW_WORLD() {
-    lightA.Set();
+    lightA.DRAW();
     for(auto& model : editor.models) {
-		model->Draw(lightA, camera);
+		model->DRAW(lightA, camera);
 	}
 }
 
@@ -118,6 +144,9 @@ void DRAW_GUI() {
     float buttonWidth = 150;
     float buttonHeight = 25;
     ImGui::Text("Models:");
+    if (ImGui::Button("Collider View", ImVec2(buttonWidth, buttonHeight))) {
+		editor.colliderView = !editor.colliderView;
+	}
     if (ImGui::BeginListBox("##models_list"))
     {
         for (auto& model : editor.models)
@@ -136,11 +165,19 @@ void DRAW_GUI() {
         }
         ImGui::EndListBox();
     }
-
     ImGui::Text("Property");
-    if (ImGui::Button("Object Add", ImVec2(buttonWidth, buttonHeight))) {
-        editor.models.push_back(std::make_unique<CUBE>());
-        editor.models.back()->Init("");
+    if (ImGui::Button("Object Cube Add", ImVec2(buttonWidth, buttonHeight))) {
+        std::shared_ptr<CUBE> cube = std::make_shared<CUBE>();
+        cube->Init("");
+        editor.models.push_back(cube);
+    }
+    if (ImGui::Button("Object Sphere Add", ImVec2(buttonWidth, buttonHeight))) {
+
+        std::shared_ptr<FBX> sphere = std::make_shared<FBX>();
+        sphere->Init("D:\\projects\\OpenGL\\OpenGL\\Resource\\sphere.fbx");
+        sphere->colliderType = COLLIDER_TYPE::SPHERE;
+        sphere->setCollider();
+        editor.models.push_back(sphere);
     }
     if (editor.selectedModel != nullptr) {
 
@@ -203,8 +240,10 @@ void DRAW_GUI() {
                             }
                             else
                             {
-                                editor.models.push_back(std::make_unique<FBX>());
-                                editor.models.back()->Init(entry.path().string());
+                                std::shared_ptr<FBX> fbx = std::make_shared<FBX>();
+                                fbx->Init(entry.path().string());
+                                fbx->setCollider();
+                                editor.models.push_back(fbx);
                                 editor.fileBrowser = false;
                                 break;
                             }
@@ -222,6 +261,8 @@ void DRAW_GUI() {
         glm::vec3 pos = editor.selectedModel->getProperty_Position();
         glm::vec3 rot_axis = editor.selectedModel->getProperty_RotationAxis();
         glm::vec3 scale = editor.selectedModel->getProperty_Scale();
+        glm::vec3 relative_pos = editor.selectedModel->collider->getRelativePosition();
+        float collider_scale = editor.selectedModel->collider->getScale();
 
         if (ImGui::InputFloat3("Position", glm::value_ptr(pos))) {
             printf("pos changed\n");
@@ -234,6 +275,14 @@ void DRAW_GUI() {
         if (ImGui::InputFloat3("Scale", glm::value_ptr(scale))) {
             printf("scale changed\n");
             editor.selectedModel->setProperty_Scale(scale);
+        }
+        if (ImGui::InputFloat3("Collider Position", glm::value_ptr(relative_pos))) {
+			printf("collider pos changed\n");
+            editor.selectedModel->collider->setRelativePosition(relative_pos);
+		}
+        if (ImGui::InputFloat("Collider Scale", &collider_scale)) {
+            printf("collider scale changed\n");
+            editor.selectedModel->collider->setScale(collider_scale);
         }
     }
 
@@ -248,8 +297,11 @@ void display() {
 
     PERSPECTIVE_VIEW();
     CAMERA_VIEW();
-    
+    PHYSICS_PIPE();
+
     DRAW_AXIS();
+    if(!editor.colliderView)
+        DRAW_COLLIDER();
     DRAW_WORLD();
     DRAW_GUI();
 
@@ -295,10 +347,12 @@ int main(int argc, char** argv) {
 
     reshape(windowWidth, windowHeight);
 
-    editor.models.push_back(std::make_unique<CUBE>());
-    editor.models.push_back(std::make_unique<CUBE>());
+    editor.models.push_back(std::make_shared<CUBE>());
+    editor.models.push_back(std::make_shared<CUBE>());
     editor.models.at(0)->Init("");
+    editor.models.at(0)->setCollider();
     editor.models.at(1)->Init("");
+    editor.models.at(1)->setCollider();
     editor.models.back()->setProperty_Position({ 0.0, 1.0, 0.0 });
 
     glutMainLoop();

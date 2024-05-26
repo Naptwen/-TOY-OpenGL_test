@@ -1,20 +1,7 @@
 #ifndef __UGL_HPP__
 #define __UGL_HPP__
-#include <GL/glew.h>
-#include <GLFW/glfw3.h>
-#include <GL/freeglut.h>
-#include <glm/glm.hpp>
-#include <glm/gtc/type_ptr.hpp>
-#include <glm/gtc/matrix_transform.hpp>
-#include <iostream>
-#include <stdio.h>
-#include <vector>
-#include <tuple>
-#include <fstream>
-#include <sstream>
-#include <fbxsdk.h>
-#include <filesystem>
-
+#include "UPHYSIC.hpp"
+#include <corecrt_math_defines.h>
 
 
 unsigned int compileShader(unsigned int type, const char* source) {
@@ -46,7 +33,6 @@ unsigned int createShader(const char* vertexShader, const char* fragmentShader) 
 
 	glDeleteShader(vs);
 	glDeleteShader(fs);
-
 	return program;
 }
 
@@ -150,11 +136,11 @@ struct CAMERA {
 };
 
 struct LIGHT {
-	glm::vec3 _eye = { 1.0f, 10.0f, 15.0f };
+	glm::vec3 _pos = { 1.0f, 10.0f, 15.0f };
 	glm::vec3 _color = { 1.0f, 1.0f, 1.0f };
 
-	void Set() {
-		GLfloat lightPosition[] = { _eye.x, _eye.y, _eye.z, 1.0f };
+	void DRAW() {
+		GLfloat lightPosition[] = { _pos.x, _pos.y, _pos.z, 1.0f };
 		GLfloat lightColor[] = { _color.x, _color.y, _color.z, 1.0f };
 		glLightfv(GL_LIGHT0, GL_POSITION, lightPosition);
 		glLightfv(GL_LIGHT0, GL_DIFFUSE, lightColor);
@@ -164,17 +150,21 @@ struct LIGHT {
 struct MODEL {
 
 public:
-
+	COLLIDER_TYPE colliderType = COLLIDER_TYPE::NONE;
+	std::shared_ptr<COLLIDER> collider;
 	virtual void Init(const std::string&) = 0;
 
 	std::string getName() const {
 		return name;
 	}
 	glm::vec3 getProperty_Position() const {
-		return _eye;
+		return _pos;
 	}
 	void setProperty_Position(glm::vec3 position) {
-		_eye = position;
+		_pos = position;
+		if (collider) {
+			collider->position = position;
+		}
 	}
 	glm::vec3 getProperty_RotationAxis() const {
 		return _rotationAxis;
@@ -194,9 +184,25 @@ public:
 	void setColor(glm::vec3 color) {
 		_color = color;
 	}
+	void setShaderProgram() {
+		std::string vertexShaderSource = ReadShaderFile("VertexShader.vert");
+		std::string fragmentShaderSource = ReadShaderFile("FragmentShader.frag");
+		shaderProgram = createShader(vertexShaderSource.c_str(), fragmentShaderSource.c_str());
+	}
+	void setCollider() {
+		if (colliderType == COLLIDER_TYPE::BOX){
+			collider = std::make_shared<BOX_COLLIDER>();
+			std::static_pointer_cast<BOX_COLLIDER>(collider)->SET(_pos, _scale, glm::mat3(1.0f));
+		}
+		else if (colliderType == COLLIDER_TYPE::SPHERE) {
+			collider = std::make_shared<SPHERE_COLLIDER>();
+			std::static_pointer_cast<SPHERE_COLLIDER>(collider)->SET(_pos);
+		}
+	}
+
 	bool InterSection(glm::vec3 rayOrigin, glm::vec3 rayDirection) const {
-		glm::vec3 min = _eye;
-		glm::vec3 max = _eye + _scale;
+		glm::vec3 min = _pos;
+		glm::vec3 max = _pos + _scale;
 		float tmin = (min.x - rayOrigin.x) / rayDirection.x;
 		float tmax = (max.x - rayOrigin.x) / rayDirection.x;
 
@@ -224,70 +230,9 @@ public:
 
 		return tmax >= 0;
 	}
-	void Draw(const LIGHT& light, const CAMERA& camera) const {
-		GLint currentShader;
-		glGetIntegerv(GL_CURRENT_PROGRAM, &currentShader);
-		// 쉐이더 설정
-		glUseProgram(shaderProgram);
-		// 모델 행렬 설정
-		glm::mat4 model = glm::mat4(1.0f);
-		model = glm::translate(model, _eye);
-		glm::mat4 rotationX = glm::rotate(glm::mat4(1.0f), glm::radians(_rotationAxis[0]), glm::vec3(1, 0, 0));
-		glm::mat4 rotationY = glm::rotate(glm::mat4(1.0f), glm::radians(_rotationAxis[1]), glm::vec3(0, 1, 0));
-		glm::mat4 rotationZ = glm::rotate(glm::mat4(1.0f), glm::radians(_rotationAxis[2]), glm::vec3(0, 0, 1));
-		glm::mat4 rotation = rotationZ * rotationY * rotationX;
-		model = model * rotation;
-		model = glm::scale(model, _scale);
-		int modelLocation = glGetUniformLocation(shaderProgram, "model");
-		glUniformMatrix4fv(modelLocation, 1, GL_FALSE, glm::value_ptr(model));
-		// 뷰 행렬 설정
-		glm::mat4 view = camera.getViewMatrix();
-		int viewLocation = glGetUniformLocation(shaderProgram, "view");
-		glUniformMatrix4fv(viewLocation, 1, GL_FALSE, glm::value_ptr(view));
-		// 투영 행렬 설정
-		glm::mat4 projection = camera.getProjectionMatrix();
-		int projectionLocation = glGetUniformLocation(shaderProgram, "projection");
-		glUniformMatrix4fv(projectionLocation, 1, GL_FALSE, glm::value_ptr(projection));
-		// Light position 설정
-		int lightPosLocation = glGetUniformLocation(shaderProgram, "lightPos");
-		glUniform3fv(lightPosLocation, 1, glm::value_ptr(light._eye));
-		// Light color 설정
-		int lightColorLocation = glGetUniformLocation(shaderProgram, "lightColor");
-		glUniform3fv(lightColorLocation, 1, glm::value_ptr(light._color));
-		// Color 설정
-		int colorLocation = glGetUniformLocation(shaderProgram, "objectColor");
-		glUniform3fv(colorLocation, 1, glm::value_ptr(_color));
-		// 그리기 실행
-		glBindVertexArray(VAO);
-		glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(vertexCount));
-		// 쉐이더 해제
-		glUseProgram(currentShader);
-	}
 
-protected:
-	std::string name;
-	GLuint VAO = 0, VBO = 0, CBO = 0, NBO = 0, TBO = 0;
-	size_t vertexCount;
-	unsigned int shaderProgram;
-	std::vector<float> vertices;
-	std::vector<float> normals;
-	std::vector<float> textures;
-
-	glm::vec3 _color = { 1.0f, 1.0f, 1.0f };
-	glm::vec3 _eye = { 0.0f, 0.0f, 0.0f };
-	glm::vec3 _rotationAxis = { 0.0f, 0.0f, 0.0f };
-	glm::vec3 _scale = { 1.0f, 1.0f, 1.0f };
-
-	std::string ReadShaderFile(const std::string& filename) {
-		std::ifstream _file(filename);
-		if (!_file.is_open()) {
-			throw std::runtime_error("Failed to open shader file: " + filename);
-		}
-		std::stringstream _buffer;
-		_buffer << _file.rdbuf();
-		return _buffer.str();
-	}
-	void Set() {
+	void DRAW(const LIGHT& light, const CAMERA& camera) {
+		GLuint VAO = 0, VBO = 0, CBO = 0, NBO = 0, TBO = 0;
 		glGenBuffers(1, &VBO);
 		glBindBuffer(GL_ARRAY_BUFFER, VBO);
 		glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float), vertices.data(), GL_STATIC_DRAW);
@@ -309,7 +254,70 @@ protected:
 		glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 0, (void*)0);
 		glEnableVertexAttribArray(1);
 
-		vertexCount = vertices.size() / 3;
+		size_t vertexCount = vertices.size() / 3;
+		// 쉐이더 설정
+		glUseProgram(0);
+		setShaderProgram();
+		glUseProgram(shaderProgram);
+		// 모델 행렬 설정
+		glm::mat4 model = glm::mat4(1.0f);
+		model = glm::translate(model, _pos);
+		glm::mat4 rotationX = glm::rotate(glm::mat4(1.0f), glm::radians(_rotationAxis[0]), glm::vec3(1, 0, 0));
+		glm::mat4 rotationY = glm::rotate(glm::mat4(1.0f), glm::radians(_rotationAxis[1]), glm::vec3(0, 1, 0));
+		glm::mat4 rotationZ = glm::rotate(glm::mat4(1.0f), glm::radians(_rotationAxis[2]), glm::vec3(0, 0, 1));
+		glm::mat4 rotation = rotationZ * rotationY * rotationX;
+		model = model * rotation;
+		model = glm::scale(model, _scale);
+		int modelLocation = glGetUniformLocation(shaderProgram, "model");
+		glUniformMatrix4fv(modelLocation, 1, GL_FALSE, glm::value_ptr(model));
+		// 뷰 행렬 설정
+		glm::mat4 view = camera.getViewMatrix();
+		int viewLocation = glGetUniformLocation(shaderProgram, "view");
+		glUniformMatrix4fv(viewLocation, 1, GL_FALSE, glm::value_ptr(view));
+		// 투영 행렬 설정
+		glm::mat4 projection = camera.getProjectionMatrix();
+		int projectionLocation = glGetUniformLocation(shaderProgram, "projection");
+		glUniformMatrix4fv(projectionLocation, 1, GL_FALSE, glm::value_ptr(projection));
+		// Light position 설정
+		int lightPosLocation = glGetUniformLocation(shaderProgram, "lightPos");
+		glUniform3fv(lightPosLocation, 1, glm::value_ptr(light._pos));
+		// Light color 설정
+		int lightColorLocation = glGetUniformLocation(shaderProgram, "lightColor");
+		glUniform3fv(lightColorLocation, 1, glm::value_ptr(light._color));
+		// Color 설정
+		int colorLocation = glGetUniformLocation(shaderProgram, "objectColor");
+		glUniform3fv(colorLocation, 1, glm::value_ptr(_color));
+		// 그리기 실행
+		glBindVertexArray(VAO);
+		glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(vertexCount));
+		glBindVertexArray(0);
+		glUseProgram(0);
+		// 메모리 해제
+		glDeleteVertexArrays(1, &VAO);
+		glDeleteBuffers(1, &VBO);
+		glDeleteBuffers(1, &NBO);
+	}
+
+protected:
+	std::string name;
+	unsigned int shaderProgram = 0;
+	std::vector<float> vertices;
+	std::vector<float> normals;
+	std::vector<float> textures;
+
+	glm::vec3 _color = { 1.0f, 1.0f, 1.0f };
+	glm::vec3 _pos = { 0.0f, 0.0f, 0.0f };
+	glm::vec3 _rotationAxis = { 0.0f, 0.0f, 0.0f };
+	glm::vec3 _scale = { 1.0f, 1.0f, 1.0f };
+
+	std::string ReadShaderFile(const std::string& filename) {
+		std::ifstream _file(filename);
+		if (!_file.is_open()) {
+			throw std::runtime_error("Failed to open shader file: " + filename);
+		}
+		std::stringstream _buffer;
+		_buffer << _file.rdbuf();
+		return _buffer.str();
 	}
 };
 
@@ -345,6 +353,7 @@ struct EDITOR {
 	std::shared_ptr<MODEL> selectedModel = nullptr;
 	std::string currentPath;
 	bool fileBrowser = false;
+	bool colliderView = false;
 };
 
 struct MOUSE {
@@ -429,10 +438,10 @@ struct MOUSE {
 	
 	void scroll(int wheel, int direction, int x, int y) const {
 		if (direction > 0) {
-			camera->moveForward(2.0f);
+			camera->moveForward(0.5f);
 		}
 		else {
-			camera->moveBackward(2.0f);
+			camera->moveBackward(0.5f);
 		}
 	}
 };
@@ -540,10 +549,8 @@ struct CUBE : public MODEL
 		};
 		name = "Cube";
 
-		std::string vertexShaderSource = ReadShaderFile("VertexShader.vert");
-		std::string fragmentShaderSource = ReadShaderFile("FragmentShader.frag");
-		shaderProgram = createShader(vertexShaderSource.c_str(), fragmentShaderSource.c_str());
-		Set();
+		collider = std::make_shared<BOX_COLLIDER>();
+		std::dynamic_pointer_cast<BOX_COLLIDER>(collider)->SET(_pos);
 	}
 };
 
@@ -624,9 +631,7 @@ struct FBX : public MODEL
 		}
 	}
 
-	void Init(const std::string& filename) final {
-		name = filename;
-		
+	void LoadFbx(const std::string& filename) {
 		FbxManager* manager = FbxManager::Create();
 		FbxIOSettings* ios = FbxIOSettings::Create(manager, IOSROOT);
 		manager->SetIOSettings(ios);
@@ -647,12 +652,11 @@ struct FBX : public MODEL
 		}
 
 		manager->Destroy();
+	}
 
-		std::string vertexShaderSource = ReadShaderFile("VertexShader.vert");
-		std::string fragmentShaderSource = ReadShaderFile("FragmentShader.frag");
-		shaderProgram = createShader(vertexShaderSource.c_str(), fragmentShaderSource.c_str());
-
-		Set();
+	void Init(const std::string& filename) final {
+		name = filename;
+		LoadFbx(filename);
 	}
 };
 
