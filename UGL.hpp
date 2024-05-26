@@ -550,7 +550,7 @@ struct CUBE : public MODEL
 		name = "Cube";
 
 		collider = std::make_shared<BOX_COLLIDER>();
-		std::dynamic_pointer_cast<BOX_COLLIDER>(collider)->SET(_pos);
+		std::dynamic_pointer_cast<BOX_COLLIDER>(collider)->SET(_pos, _scale, glm::mat3(1.0f));
 	}
 };
 
