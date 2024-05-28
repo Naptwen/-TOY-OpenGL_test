@@ -1,20 +1,16 @@
-#include "UGL.hpp"
-#include "imgui.h"
-#include "backends/imgui_impl_glut.h"
-#include "backends/imgui_impl_opengl3.h"
-
-CAMERA camera;
-EDITOR editor;
-KEYBOARD keyboard(&camera);
-MOUSE mouse(&camera);
+#include "UIMGUI.hpp"
+EDITOR sEditor;
+KEYBOARD sKeyboard;
+MOUSE sMouse;
 LIGHT lightA;
+IMGUI sImgui;
 
 void activeKeyboard(unsigned char key, int x, int y) {
     if (ImGui::GetIO().WantCaptureKeyboard) {
         ImGui_ImplGLUT_KeyboardFunc(key, x, y);
     }
     else {
-        keyboard.active(key, x, y);
+        sKeyboard.active(key, x, y, sEditor);
         glutPostRedisplay();
     }
 }
@@ -24,25 +20,26 @@ void activeMouse(int button, int state, int x, int y) {
         ImGui_ImplGLUT_MouseFunc(button, state, x, y);
     }
     else {
-        mouse.active(button, state, x, y, editor);
+        sMouse.active(button, state, x, y, sEditor);
         glutPostRedisplay();
     }
 }
 
 void activeMotion(int x, int y) {
-	mouse.motion(x, y);
+	sMouse.motion(x, y, sEditor);
 	glutPostRedisplay();
 }
 
 void activeScroll(int wheel, int direction, int x, int y) {
-    mouse.scroll(wheel, direction, x, y);
+    sMouse.scroll(wheel, direction, x, y, sEditor);
     glutPostRedisplay();
 }
 
 void reshape(int width, int height) {
     glViewport(0, 0, width, height);
-    camera._viewportWidth = width;
-    camera._viewportHeight = height;
+    sEditor.camera = std::make_shared<CAMERA>();
+    sEditor.camera->_viewportWidth = width;
+    sEditor.camera->_viewportHeight = height;
     ImGuiIO& io = ImGui::GetIO(); 
     io.DisplaySize = ImVec2((float)width, (float)height);
 }
@@ -50,26 +47,29 @@ void reshape(int width, int height) {
 void PERSPECTIVE_VIEW() {
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
-    auto projectMatrix = camera.getProjectionMatrix();
+    auto projectMatrix = sEditor.camera->getProjectionMatrix();
     glLoadMatrixf(glm::value_ptr(projectMatrix));
 }
 
 void CAMERA_VIEW() {
 	glMatrixMode(GL_MODELVIEW);
 	glLoadIdentity();
-    auto viewMatrix = camera.getViewMatrix();
+    auto viewMatrix = sEditor.camera->getViewMatrix();
     glLoadMatrixf(glm::value_ptr(viewMatrix));
 }
 
 void PHYSICS_PIPE() {
-    for (size_t i = 0; i < editor.models.size(); ++i) {
-        for (size_t j = i + 1; j < editor.models.size(); ++j) {
-            if (editor.models[i]->collider == nullptr || editor.models[j]->collider == nullptr) {
+    for (size_t i = 0; i < sEditor.models.size(); ++i) {
+        sEditor.models[i]->setCollision(false);
+    }
+    for (size_t i = 0; i < sEditor.models.size(); ++i) {
+        for (size_t j = i + 1; j < sEditor.models.size(); ++j) {
+            if (sEditor.models[i]->collider == nullptr || sEditor.models[j]->collider == nullptr) {
 				continue;
 			}
-            if (CollisionChecking(*editor.models[i]->collider, *editor.models[j]->collider)) {
-                editor.models[i]->setColor({ 0.0, 0.5, 1.0 });
-                editor.models[j]->setColor({ 0.0, 0.5, 1.0 });
+            if (CollisionChecking(*sEditor.models[i]->collider, *sEditor.models[j]->collider)) {
+                sEditor.models[i]->setCollision(true);
+                sEditor.models[j]->setCollision(true);
 			}
         }
     }
@@ -109,7 +109,7 @@ void DRAW_AXIS() {
 
 void DRAW_COLLIDER() {
     glDisable(GL_LIGHTING);
-    for (auto& model : editor.models) {
+    for (auto& model : sEditor.models) {
         if (model->collider == nullptr) {
             continue;
         }
@@ -127,168 +127,15 @@ void DRAW_COLLIDER() {
 
 void DRAW_WORLD() {
     lightA.DRAW();
-    for(auto& model : editor.models) {
-		model->DRAW(lightA, camera);
+    for(auto& model : sEditor.models) {
+		model->DRAW(lightA, *sEditor.camera);
 	}
 }
 
 void DRAW_GUI() {
-    ImGui_ImplOpenGL3_NewFrame();
-    ImGui_ImplGLUT_NewFrame();
-    ImGuiIO& io = ImGui::GetIO();
-
-    ImGui::NewFrame();
-    ImGui::SetNextWindowPos(ImVec2(0, 0));
-    ImGui::SetNextWindowSize({ io.DisplaySize.x * 0.25f, io.DisplaySize.y});
-    ImGui::Begin("GAME MAKING", NULL, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
-    float buttonWidth = 150;
-    float buttonHeight = 25;
-    ImGui::Text("Models:");
-    if (ImGui::Button("Collider View", ImVec2(buttonWidth, buttonHeight))) {
-		editor.colliderView = !editor.colliderView;
-	}
-    if (ImGui::BeginListBox("##models_list"))
-    {
-        for (auto& model : editor.models)
-        {
-            std::string modelName = model->getName();
-            if (modelName.empty()) {
-                modelName = "##empty_id";
-            }
-            if (ImGui::Selectable(modelName.c_str()))
-            {
-                printf("Selected %s\n", modelName.c_str());
-                editor.selectedModel = model;
-                model->setColor({ 1.0, 0.0, 0.0 });
-                break;
-            }
-        }
-        ImGui::EndListBox();
-    }
-    ImGui::Text("Property");
-    if (ImGui::Button("Object Cube Add", ImVec2(buttonWidth, buttonHeight))) {
-        std::shared_ptr<CUBE> cube = std::make_shared<CUBE>();
-        cube->Init("");
-        editor.models.push_back(cube);
-    }
-    if (ImGui::Button("Object Sphere Add", ImVec2(buttonWidth, buttonHeight))) {
-
-        std::shared_ptr<FBX> sphere = std::make_shared<FBX>();
-        sphere->Init("D:\\projects\\OpenGL\\OpenGL\\Resource\\sphere.fbx");
-        sphere->colliderType = COLLIDER_TYPE::SPHERE;
-        sphere->setCollider();
-        editor.models.push_back(sphere);
-    }
-    if (editor.selectedModel != nullptr) {
-
-        for (auto& model : editor.models)
-        {
-			if (model == editor.selectedModel)
-                model->setColor({ 1.0, 0.0, 0.0 });
-            else
-                model->setColor({ 1.0, 1.0, 1.0 });
-		}
-
-        if (ImGui::Button("Object Del", ImVec2(buttonWidth, buttonHeight))) {
-            auto it = std::find_if(editor.models.begin(), editor.models.end(), 
-            [&](const auto& model) {
-                return model == editor.selectedModel;
-                });
-            if (it != editor.models.end()) {
-                it->reset();
-                editor.models.erase(it);
-            }
-            editor.selectedModel = nullptr;
-        }
-    }
-    else {
-        for (auto& model : editor.models)
-        {
-            model->setColor({ 1.0, 1.0, 1.0 });
-        }
-
-        ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * 0.5f);
-        ImGui::Button("Object Del", ImVec2(buttonWidth, buttonHeight));
-        ImGui::PopStyleVar();
-    }
-    if (ImGui::Button("Object Attr", ImVec2(buttonWidth, buttonHeight))) {
-        printf("Button was pressed.\n");
-    }
-    if (ImGui::Button("File Browser", ImVec2(buttonWidth, buttonHeight))) {
-        editor.fileBrowser = !editor.fileBrowser;
-	}
-    if (editor.fileBrowser)
-    {
-        if (editor.currentPath.empty())
-        {
-            editor.currentPath = std::filesystem::current_path().string() + "\\Resource";
-        }
-        if (ImGui::Begin("File Browser"))
-        {
-            ImGui::Text("Current Path: %s", editor.currentPath.c_str());
-            if (ImGui::BeginListBox("##file_list"))
-            {
-                for (const auto& entry : std::filesystem::directory_iterator(editor.currentPath))
-                {
-                    if (entry.path().extension() == ".fbx")
-                    {
-                        if (ImGui::Selectable(entry.path().filename().string().c_str()))
-                        {
-                            if (entry.is_directory())
-                            {
-                                editor.currentPath = entry.path().string();
-                            }
-                            else
-                            {
-                                std::shared_ptr<FBX> fbx = std::make_shared<FBX>();
-                                fbx->Init(entry.path().string());
-                                fbx->setCollider();
-                                editor.models.push_back(fbx);
-                                editor.fileBrowser = false;
-                                break;
-                            }
-                        }
-                    }
-                }
-                ImGui::EndListBox();
-            }
-            ImGui::End();
-        }
-    }
-    if (editor.selectedModel != nullptr)
-    {
-        ImGui::Text("Selected Model's Properties");
-        glm::vec3 pos = editor.selectedModel->getProperty_Position();
-        glm::vec3 rot_axis = editor.selectedModel->getProperty_RotationAxis();
-        glm::vec3 scale = editor.selectedModel->getProperty_Scale();
-        glm::vec3 relative_pos = editor.selectedModel->collider->getRelativePosition();
-        float collider_scale = editor.selectedModel->collider->getScale();
-
-        if (ImGui::InputFloat3("Position", glm::value_ptr(pos))) {
-            printf("pos changed\n");
-            editor.selectedModel->setProperty_Position(pos);
-        }
-        if (ImGui::InputFloat3("RotationAxis", glm::value_ptr(rot_axis))) {
-            printf("rot_axis changed\n");
-            editor.selectedModel->setProperty_RotationAxis(rot_axis);
-        }
-        if (ImGui::InputFloat3("Scale", glm::value_ptr(scale))) {
-            printf("scale changed\n");
-            editor.selectedModel->setProperty_Scale(scale);
-        }
-        if (ImGui::InputFloat3("Collider Position", glm::value_ptr(relative_pos))) {
-			printf("collider pos changed\n");
-            editor.selectedModel->collider->setRelativePosition(relative_pos);
-		}
-        if (ImGui::InputFloat("Collider Scale", &collider_scale)) {
-            printf("collider scale changed\n");
-            editor.selectedModel->collider->setScale(collider_scale);
-        }
-    }
-
-    ImGui::End();
-    ImGui::Render();
-    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+    sImgui.begin();
+    sImgui.draw(sEditor);
+    sImgui.end();
     glutPostRedisplay();
 }
 
@@ -299,26 +146,14 @@ void display() {
     CAMERA_VIEW();
     PHYSICS_PIPE();
 
-    DRAW_AXIS();
-    if(!editor.colliderView)
+    if (sEditor.axisView)
+        DRAW_AXIS();
+    if (sEditor.colliderView)
         DRAW_COLLIDER();
     DRAW_WORLD();
     DRAW_GUI();
 
     glutSwapBuffers(); 
-}
-
-void imguiInit() {
-    IMGUI_CHECKVERSION();
-    ImGui::CreateContext();
-    ImGuiIO& io = ImGui::GetIO();
-    ImGui::SetNextWindowSize(io.DisplaySize);
-    ImGui::SetNextWindowPos(ImVec2(0, 0));
-    ImGui::StyleColorsLight();
-
-    ImGui_ImplGLUT_Init();
-    ImGui_ImplGLUT_InstallFuncs();
-    ImGui_ImplOpenGL3_Init("#version 130");
 }
 
 int main(int argc, char** argv) {
@@ -329,9 +164,16 @@ int main(int argc, char** argv) {
     int windowHeight = 624;
     glutInitWindowSize(windowWidth, windowHeight);
     glutCreateWindow("OpenGL");
-
     glewInit();
-    imguiInit();
+
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
+    ImGui::SetNextWindowPos(ImVec2(0, 0));
+    ImGui::StyleColorsLight();
+    ImGui_ImplGLUT_Init();
+    ImGui_ImplGLUT_InstallFuncs();
+    ImGui_ImplOpenGL3_Init("#version 130");
 
     glEnable(GL_MULTISAMPLE);
     glEnable(GL_DEPTH_TEST);
@@ -344,21 +186,8 @@ int main(int argc, char** argv) {
     glutMouseFunc(activeMouse);
     glutMotionFunc(activeMotion);
     glutMouseWheelFunc(activeScroll);
-
     reshape(windowWidth, windowHeight);
 
-    editor.models.push_back(std::make_shared<CUBE>());
-    editor.models.push_back(std::make_shared<CUBE>());
-    editor.models.at(0)->Init("");
-    editor.models.at(0)->setCollider();
-    editor.models.at(1)->Init("");
-    editor.models.at(1)->setCollider();
-    editor.models.back()->setProperty_Position({ 0.0, 1.0, 0.0 });
-
     glutMainLoop();
-
-    ImGui_ImplOpenGL3_Shutdown();
-    ImGui_ImplGLUT_Shutdown();
-    ImGui::DestroyContext();
     return 0;
 }

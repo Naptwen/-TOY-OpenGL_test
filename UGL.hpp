@@ -4,7 +4,7 @@
 #include <corecrt_math_defines.h>
 
 
-unsigned int compileShader(unsigned int type, const char* source) {
+inline unsigned int compileShader(unsigned int type, const char* source) {
 	unsigned int id = glCreateShader(type);
 	glShaderSource(id, 1, &source, nullptr);
 	glCompileShader(id);
@@ -21,7 +21,7 @@ unsigned int compileShader(unsigned int type, const char* source) {
 	return id;
 }
 
-unsigned int createShader(const char* vertexShader, const char* fragmentShader) {
+inline unsigned int createShader(const char* vertexShader, const char* fragmentShader) {
 	unsigned int program = glCreateProgram();
 	unsigned int vs = compileShader(GL_VERTEX_SHADER, vertexShader);
 	unsigned int fs = compileShader(GL_FRAGMENT_SHADER, fragmentShader);
@@ -43,7 +43,7 @@ struct CAMERA {
 	float _fovy = 15.0f;
 	float _near = 0.1f;
 	float _far = 10000.0f;
-	float _speed = 10.0f;
+	float _speed = 1.0f;
 	float _rot_speed = 0.2f;
 	float _yaw = 0.0f;
 	float _pitch = 0.0f;
@@ -160,34 +160,41 @@ public:
 	glm::vec3 getProperty_Position() const {
 		return _pos;
 	}
+	glm::vec3 getProperty_RotationAxis() const {
+		return _rotationAxis;
+	}
+	glm::vec3 getProperty_Scale() const {
+		return _scale;
+	}
+	glm::vec3 getColor() const {
+		return _color;
+	}
+
 	void setProperty_Position(glm::vec3 position) {
 		_pos = position;
 		if (collider) {
 			collider->position = position;
 		}
 	}
-	glm::vec3 getProperty_RotationAxis() const {
-		return _rotationAxis;
-	}
 	void setProperty_RotationAxis(glm::vec3 rotationAxis) {
 		_rotationAxis = rotationAxis;
-	}
-	glm::vec3 getProperty_Scale() const {
-		return _scale;
 	}
 	void setProperty_Scale(glm::vec3 scale) {
 		_scale = scale;
 	}
-	glm::vec3 getColor() const {
-		return _color;
-	}
 	void setColor(glm::vec3 color) {
 		_color = color;
+	}
+	void setName(std::string name) {
+		this->name = name;
 	}
 	void setShaderProgram() {
 		std::string vertexShaderSource = ReadShaderFile("VertexShader.vert");
 		std::string fragmentShaderSource = ReadShaderFile("FragmentShader.frag");
 		shaderProgram = createShader(vertexShaderSource.c_str(), fragmentShaderSource.c_str());
+	}
+	void setCollision(bool collision) const {
+		collider->collision = collision;
 	}
 	void setCollider() {
 		if (colliderType == COLLIDER_TYPE::BOX){
@@ -230,7 +237,6 @@ public:
 
 		return tmax >= 0;
 	}
-
 	void DRAW(const LIGHT& light, const CAMERA& camera) {
 		GLuint VAO = 0, VBO = 0, CBO = 0, NBO = 0, TBO = 0;
 		glGenBuffers(1, &VBO);
@@ -318,131 +324,6 @@ protected:
 		std::stringstream _buffer;
 		_buffer << _file.rdbuf();
 		return _buffer.str();
-	}
-};
-
-struct KEYBOARD {
-	CAMERA* camera;
-	float pressDuration = 0.0f;
-	KEYBOARD(CAMERA* camera) : camera(camera) {}
-
-	void active(unsigned char key, int x, int y) {
-		switch (key) {
-		case 'w':
-		case 'W':
-			camera->moveForward(2.0f);
-			break;
-		case 's':
-		case 'S':
-			camera->moveBackward(2.0f);
-			break;
-		case 'a':
-		case 'A':
-			camera->moveLeft(0.5f);
-			break;
-		case 'd':
-		case 'D':
-			camera->moveRight(0.5f);
-			break;
-		}
-	}
-};
-
-struct EDITOR {
-	std::vector<std::shared_ptr<MODEL>> models;
-	std::shared_ptr<MODEL> selectedModel = nullptr;
-	std::string currentPath;
-	bool fileBrowser = false;
-	bool colliderView = false;
-};
-
-struct MOUSE {
-	std::shared_ptr<CAMERA> camera;
-	bool _isDragging = false;
-	bool _isRotating = false;
-	int _lastX = 0;
-	int _lastY = 0;
-	float pressDuration = 0.0f;
-	float sensitivity = 0.1f;
-
-	MOUSE(CAMERA* camera) : camera(camera) {}
-
-	void active(int button, int state, int x, int y, EDITOR& editor) {
-		if (button == GLUT_MIDDLE_BUTTON) {
-			if (state == GLUT_DOWN) {
-				_isDragging = true;
-				_lastX = x;
-				_lastY = y;
-			}
-			else if (state == GLUT_UP) {
-				_isDragging = false;
-			}
-		}
-		else if (button == GLUT_RIGHT_BUTTON) {
-			if (state == GLUT_DOWN) {
-				_isRotating = true;
-				_lastX = x;
-				_lastY = y;
-			}
-			else if (state == GLUT_UP) {
-				_isRotating = false;
-			}
-		}
-		else if (button == GLUT_LEFT_BUTTON) {
-			if (state == GLUT_DOWN) {
-				select(x, y, editor);
-			}
-		}
-	}
-
-	void select(int x, int y, EDITOR& editor) const {
-		float ndcX = (2.0f * x) / camera->getViewportWidth() - 1.0f;
-		float ndcY = 1.0f - (2.0f * y) / camera->getViewportHeight();
-
-		glm::vec4 rayClip = glm::vec4(ndcX, ndcY, -1.0f, 1.0f);
-		glm::vec4 rayEye = glm::inverse(camera->getProjectionMatrix()) * rayClip;
-		rayEye = glm::vec4(rayEye.x, rayEye.y, -1.0f, 0.0f);
-
-		glm::vec3 rayOrigin = camera->getPosition();
-		glm::vec3 rayDirection = glm::vec3(glm::inverse(camera->getViewMatrix()) * rayEye);
-		rayDirection = glm::normalize(rayDirection);
-
-		for (auto& model : editor.models) {
-			if (model->InterSection(rayOrigin, rayDirection)) {
-				editor.selectedModel = model;
-				break;
-			}
-		}
-	}
-
-	void motion(int x, int y) {
-		if (_isDragging) {
-			float dx = (x - _lastX) * 0.01f;
-			float dy = (y - _lastY) * 0.01f;
-			camera->moveRight(dx);
-			camera->moveUp(dy);
-			_lastX = x;
-			_lastY = y;
-		}
-		else if (_isRotating) {
-			float xoffset = static_cast<float>((x - _lastX) > 0 ? -1 : 1);
-			float yoffset = static_cast<float>((_lastY - y) > 0 ? -1 : 1);
-			_lastX = x;
-			_lastY = y;
-			camera->rotation(yoffset, xoffset);
-		}
-		else {
-			pressDuration = 0.0f;
-		}
-	}
-	
-	void scroll(int wheel, int direction, int x, int y) const {
-		if (direction > 0) {
-			camera->moveForward(0.5f);
-		}
-		else {
-			camera->moveBackward(0.5f);
-		}
 	}
 };
 

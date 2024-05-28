@@ -26,6 +26,7 @@ struct COLLIDER {
     glm::vec3 position;
     glm::vec3 relative_position = glm::zero<glm::vec3>();
     float scale = 1.0f;
+    bool collision = false;
     
     glm::vec3 getPosition() const {
 		return position;
@@ -37,6 +38,9 @@ struct COLLIDER {
         return scale;
     }
 
+    void setCollision(bool collision) {
+		this->collision = collision;
+	}
     void setRelativePosition(glm::vec3 relative_position) {
         this->relative_position = relative_position;
     }
@@ -48,7 +52,20 @@ struct COLLIDER {
     }
 
 	virtual ~COLLIDER() = default;
-    virtual void DRAW() const = 0;
+    virtual void DRAW() {
+        glPushMatrix();
+        if (collision)
+            glColor4f(1.0f, 0.0f, 0.0f, 1.0f);
+        else
+            glColor4f(0.0f, 1.0f, 0.0f, 1.0f);
+        glm::vec3 pos = position + relative_position;
+        glTranslatef(pos.x, pos.y, pos.z);
+        if (type == COLLIDER_TYPE::SPHERE)
+            glutWireSphere(scale, 20, 20);
+		else if (type == COLLIDER_TYPE::BOX)
+            glutWireCube(scale);
+        glPopMatrix();
+    }
 };
 
 struct SPHERE_COLLIDER : public COLLIDER {
@@ -57,15 +74,6 @@ struct SPHERE_COLLIDER : public COLLIDER {
         this->type = COLLIDER_TYPE::SPHERE;
         this->position = position;
     }
-
-    void DRAW() const {
-        glPushMatrix();
-        glColor4f(0.0f, 1.0f, 0.0f, 1.0f);
-        glm::vec3 pos = position + relative_position;
-        glTranslatef(pos.x, pos.y, pos.z);
-        glutWireSphere(scale, 20, 20);
-        glPopMatrix();
-	}
 };
 
 struct BOX_COLLIDER : public COLLIDER {
@@ -78,15 +86,6 @@ struct BOX_COLLIDER : public COLLIDER {
 		this->size = size;
 		this->rotation = rotation;
 	}
-
-    void DRAW() const {
-        glPushMatrix();
-        glColor3f(0.0f, 1.0f, 0.0f);
-        glm::vec3 pos = position + relative_position;
-        glTranslatef(pos.x, pos.y, pos.z);
-        glutWireCube(scale);
-        glPopMatrix();
-    }
 };
 
 inline bool CollisionChecking(const COLLIDER& A, const COLLIDER& B) {

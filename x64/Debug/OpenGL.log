@@ -1,5 +1,12 @@
 ﻿  C:\Program Files\Autodesk\FBX\FBX SDK\2020.3.2\lib\vs2019\x64\debug\libfbxsdk.dll
   1 File(s) copied
+  imgui_impl_glut.cpp
+  imgui_impl_opengl3.cpp
   main.cpp
 C:\Program Files (x86)\Windows Kits\10\Include\10.0.22621.0\shared\minwindef.h(130,9): warning C4005: 'APIENTRY': 매크로 재정의
+  UIMGUI.hpp
+C:\Program Files (x86)\Windows Kits\10\Include\10.0.22621.0\shared\minwindef.h(130,9): warning C4005: 'APIENTRY': 매크로 재정의
+  UPHYSIC.hpp
+C:\Program Files (x86)\Windows Kits\10\Include\10.0.22621.0\shared\minwindef.h(130,9): warning C4005: 'APIENTRY': 매크로 재정의
+  코드를 생성하고 있습니다...
   OpenGL.vcxproj -> D:\projects\OpenGL\x64\Debug\OpenGL.exe
