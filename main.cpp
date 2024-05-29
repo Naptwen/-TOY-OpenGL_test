@@ -2,7 +2,6 @@
 EDITOR sEditor;
 KEYBOARD sKeyboard;
 MOUSE sMouse;
-LIGHT lightA;
 IMGUI sImgui;
 
 void activeKeyboard(unsigned char key, int x, int y) {
@@ -75,6 +74,22 @@ void PHYSICS_PIPE() {
     }
 }
 
+void DRAW_GRID() {
+    int gridSize = 100;
+    float cellSize = 100.0f / gridSize;
+    glColor3f(0.5f, 0.5f, 0.5f);
+    for (int i = -gridSize / 2; i < gridSize / 2; ++i) {
+        for (int j = -gridSize / 2; j < gridSize / 2; ++j) {
+            glBegin(GL_LINE_LOOP); // 각 셀을 그립니다.
+            glVertex3f(i * cellSize, 0.0f, j * cellSize);
+            glVertex3f((i + 1) * cellSize, 0.0f, j * cellSize);
+            glVertex3f((i + 1) * cellSize, 0.0f, (j + 1) * cellSize);
+            glVertex3f(i * cellSize, 0.0f, (j + 1) * cellSize);
+            glEnd();
+        }
+    }
+}
+
 void DRAW_AXIS() {
     glDisable(GL_LIGHTING);
 
@@ -90,25 +105,29 @@ void DRAW_AXIS() {
     glVertex3f(0.0, 0.0, 1000.0);
     glEnd();
 
-    int gridSize = 100; 
-    float cellSize = 100.0f / gridSize;
-    glColor3f(0.5f, 0.5f, 0.5f);
-    for (int i = -gridSize / 2; i < gridSize / 2; ++i) {
-        for (int j = -gridSize / 2; j < gridSize / 2; ++j) {
-            glBegin(GL_LINE_LOOP); // 각 셀을 그립니다.
-            glVertex3f(i * cellSize, 0.0f, j * cellSize);
-            glVertex3f((i + 1) * cellSize, 0.0f, j * cellSize);
-            glVertex3f((i + 1) * cellSize, 0.0f, (j + 1) * cellSize);
-            glVertex3f(i * cellSize, 0.0f, (j + 1) * cellSize);
-            glEnd();
+    for(auto& model : sEditor.models){
+        if (model->axisX != nullptr) {
+            model->axisX->setStart(model->getProperty_Position());
+            model->axisX->DRAW();
         }
-    }
+        if (model->axisY != nullptr) {
+            model->axisY->setStart(model->getProperty_Position());
+            model->axisY->DRAW();
+        }
+        if (model->axisZ != nullptr) {
+            model->axisZ->setStart(model->getProperty_Position());
+            model->axisZ->DRAW();
+        }
+	}
 
     glEnable(GL_LIGHTING);
 }
 
 void DRAW_COLLIDER() {
     glDisable(GL_LIGHTING);
+    for (auto& light : sEditor.lights) {
+		light.DRAW();
+	}
     for (auto& model : sEditor.models) {
         if (model->collider == nullptr) {
             continue;
@@ -126,9 +145,11 @@ void DRAW_COLLIDER() {
 }
 
 void DRAW_WORLD() {
-    lightA.DRAW();
+    for (auto& light : sEditor.lights) {
+        light.SET();
+    }
     for(auto& model : sEditor.models) {
-		model->DRAW(lightA, *sEditor.camera);
+		model->DRAW(sEditor.lights.at(0), *sEditor.camera);
 	}
 }
 
@@ -139,19 +160,42 @@ void DRAW_GUI() {
     glutPostRedisplay();
 }
 
-void display() {
+void UPDATE_PHYSICS(){
+    for(auto& model : sEditor.models){
+        if (model->physics != nullptr) {
+            if (model->collider != nullptr && model->collider->collision)
+            {
+                model->physics->setVelocity(glm::zero<glm::vec3>());
+                model->physics->setForce(glm::zero<glm::vec3>());
+            }
+            glm::vec3 addPos = model->physics->UPDATE(0.1f);
+            glm::vec3 pos = model->getProperty_Position();
+            model->setProperty_Position(pos + addPos);
+        }
+	}
+}
+
+void engineLoop() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     PERSPECTIVE_VIEW();
     CAMERA_VIEW();
     PHYSICS_PIPE();
-
-    if (sEditor.axisView)
+    if (sEditor.axisView) {
         DRAW_AXIS();
-    if (sEditor.colliderView)
+    }
+    if (sEditor.gridView) {
+		DRAW_GRID();
+	}
+    if (sEditor.colliderView) {
         DRAW_COLLIDER();
-    DRAW_WORLD();
+    }
+    if (sEditor.modelView) {
+        DRAW_GRID();
+        DRAW_WORLD();
+	}
     DRAW_GUI();
+    UPDATE_PHYSICS();
 
     glutSwapBuffers(); 
 }
@@ -165,6 +209,9 @@ int main(int argc, char** argv) {
     glutInitWindowSize(windowWidth, windowHeight);
     glutCreateWindow("OpenGL");
     glewInit();
+
+    const GLubyte* version = glGetString(GL_VERSION);
+    std::cout << "OpenGL Version: " << version << std::endl;
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
@@ -181,7 +228,7 @@ int main(int argc, char** argv) {
     glEnable(GL_LIGHT0);
 
     glutReshapeFunc(reshape);
-    glutDisplayFunc(display);
+    glutDisplayFunc(engineLoop);
     glutKeyboardFunc(activeKeyboard);
     glutMouseFunc(activeMouse);
     glutMotionFunc(activeMotion);

@@ -20,6 +20,13 @@ void main()
     float diff = max(dot(norm, LightDir), 0.0);
     vec3 diffuse = diff * lightColor;
 
-    vec3 result = (ambient + diffuse) * objectColor;
+    // Specular BRDF equation
+    vec3 viewDir = normalize(-FragPos); // Viwer direction
+    vec3 halfwayDir = normalize(LightDir + viewDir); // Halfway direction between light and camera
+    float angle = max(dot(norm, halfwayDir), 0.0); // get cos of angle between normal and halfway direction
+    float spec = pow(angle, 15.0); // get specular strength
+    vec3 specular = spec * lightColor;
+    
+    vec3 result = (ambient + diffuse + specular) * objectColor;
     FragColor = vec4(result, 1.0);
 }

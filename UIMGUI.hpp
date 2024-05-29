@@ -7,6 +7,7 @@
 
 
 struct EDITOR {
+	std::vector<LIGHT> lights = {LIGHT()};
 	std::vector<std::shared_ptr<MODEL>> models;
 	std::shared_ptr<MODEL> selectedModel = nullptr;
 	std::string currentPath;
@@ -14,6 +15,8 @@ struct EDITOR {
 	bool fileBrowser = false;
 	bool colliderView = true;
 	bool axisView = true;
+	bool gridView = true;
+	bool modelView = true;
 };
 
 struct KEYBOARD {
@@ -74,6 +77,23 @@ struct MOUSE {
 		else if (button == GLUT_LEFT_BUTTON) {
 			if (state == GLUT_DOWN) {
 				select(x, y, editor);
+				for (auto& model : editor.models) {
+					if (model != editor.selectedModel)
+						continue;
+					glm::vec2 mousePos = glm::vec2(x, y);
+					if (model->axisX->isHovered(mousePos, *editor.camera)) {
+						glm::vec3 pos = model->axisX->drag(mousePos, *editor.camera);
+						model->setProperty_Position(pos);
+					}
+					else if (model->axisY->isHovered(mousePos, *editor.camera)) {
+						glm::vec3 pos = model->axisY->drag(mousePos, *editor.camera);
+						model->setProperty_Position(pos);
+					}
+					else if (model->axisZ->isHovered(mousePos, *editor.camera)) {
+						glm::vec3 pos = model->axisZ->drag(mousePos, *editor.camera);
+						model->setProperty_Position(pos);
+					}
+				}
 			}
 		}
 	}
@@ -112,7 +132,7 @@ struct MOUSE {
 			float yoffset = static_cast<float>((_lastY - y) > 0 ? -1 : 1);
 			_lastX = x;
 			_lastY = y;
-			editor.camera->rotation(yoffset, xoffset);
+			editor.camera->rotate(yoffset, xoffset);
 		}
 		else {
 			pressDuration = 0.0f;
@@ -152,10 +172,25 @@ struct IMGUI {
         ImGui::Begin("GAME MAKING");
     }
     void drawMenu(EDITOR& editor) {
+		ImGui::Checkbox("Model View", &editor.modelView);
 		ImGui::Checkbox("Collider View", &editor.colliderView);
+		ImGui::Checkbox("Grid View", &editor.gridView);
 		ImGui::Checkbox("Axis View", &editor.axisView);
     }
-    void drawObjectList(EDITOR& editor) {
+	void drawLightProperty(EDITOR& editor) {
+		ImGui::Text("Light Properties");
+		for (auto& light : editor.lights) {
+			glm::vec3 pos = light.getPosition();
+			glm::vec3 color = light.getColor();
+			if (ImGui::InputFloat3("Light Position", glm::value_ptr(pos))) {
+				light.setPosition(pos);
+			}
+			if (ImGui::InputFloat3("Light Color", glm::value_ptr(color))) {
+				light.setColor(color);
+			}
+		}
+	}
+	void drawObjectList(EDITOR& editor) {
         if (ImGui::BeginListBox("##models_list"))
         {
             for (auto& model : editor.models)
@@ -189,6 +224,10 @@ struct IMGUI {
         if (ImGui::Button("Object Cube Add", ImVec2(buttonWidth, buttonHeight))) {
             std::shared_ptr<CUBE> cube = std::make_shared<CUBE>();
             cube->Init("");
+			cube->colliderType = COLLIDER_TYPE::BOX;
+			cube->setCollider();
+			cube->setPhysics();
+			cube->setAxis();
             editor.models.push_back(cube);
         }
 	}
@@ -198,6 +237,8 @@ struct IMGUI {
             sphere->Init("D:\\projects\\OpenGL\\OpenGL\\Resource\\sphere.fbx");
             sphere->colliderType = COLLIDER_TYPE::SPHERE;
             sphere->setCollider();
+			sphere->setPhysics();
+			sphere->setAxis();
             editor.models.push_back(sphere);
         }
     }
@@ -236,8 +277,6 @@ struct IMGUI {
             glm::vec3 pos = editor.selectedModel->getProperty_Position();
             glm::vec3 rot_axis = editor.selectedModel->getProperty_RotationAxis();
             glm::vec3 scale = editor.selectedModel->getProperty_Scale();
-            glm::vec3 relative_pos = editor.selectedModel->collider->getRelativePosition();
-            float collider_scale = editor.selectedModel->collider->getScale();
 			char nameBuffer[256];
 			strncpy_s(nameBuffer, sizeof(nameBuffer), editor.selectedModel->getName().c_str(), _TRUNCATE);
 			if (ImGui::InputText("Name", nameBuffer, sizeof(nameBuffer))) {
@@ -255,15 +294,38 @@ struct IMGUI {
                 printf("scale changed\n");
                 editor.selectedModel->setProperty_Scale(scale);
             }
-            if (ImGui::InputFloat3("Collider Position", glm::value_ptr(relative_pos))) {
-                printf("collider pos changed\n");
-                editor.selectedModel->collider->setRelativePosition(relative_pos);
-            }
-            if (ImGui::InputFloat("Collider Scale", &collider_scale)) {
-                printf("collider scale changed\n");
-                editor.selectedModel->collider->setScale(collider_scale);
-            }
-			if (ImGui::Button("Object Delete", ImVec2(buttonWidth, buttonHeight))) {
+			if (editor.selectedModel->collider != nullptr)
+			{
+				glm::vec3 relative_pos = editor.selectedModel->collider->getRelativePosition();
+				glm::vec3 collider_scale = editor.selectedModel->collider->getScale();
+				if (ImGui::InputFloat3("Collider Position", glm::value_ptr(relative_pos))) {
+					printf("collider pos changed\n");
+					editor.selectedModel->collider->setRelativePosition(relative_pos);
+				}
+				if (ImGui::InputFloat3("Collider Scale", glm::value_ptr(collider_scale))) {
+					printf("collider scale changed\n");
+					editor.selectedModel->collider->setScale(collider_scale);
+				}
+			}
+			if (editor.selectedModel->physics != nullptr)
+			{
+				glm::vec3 force = editor.selectedModel->physics->getForce();
+				glm::vec3 velocity = editor.selectedModel->physics->getVelocity();
+				if (ImGui::InputFloat("Mass", &editor.selectedModel->physics->mass)) {
+					printf("Mass changed\n");
+					editor.selectedModel->physics->mass = std::max(0.0f, editor.selectedModel->physics->mass);
+				}
+				if (ImGui::InputFloat3("Force", glm::value_ptr(force))) {
+					printf("Force changed\n");
+					editor.selectedModel->physics->setForce(force);
+				}
+				if (ImGui::InputFloat3("Velocity", glm::value_ptr(velocity))) {
+					printf("Velocity changed\n");
+					editor.selectedModel->physics->setVelocity(velocity);
+				}
+			}
+			if (ImGui::Button("Object Delete", ImVec2(buttonWidth, buttonHeight))) 
+			{
 				if (editor.selectedModel != nullptr) {
 					auto it = std::find(editor.models.begin(), editor.models.end(), editor.selectedModel);
 					if (it != editor.models.end()) {
@@ -278,6 +340,7 @@ struct IMGUI {
 	void draw(EDITOR& editor) {
         ImGui::Text("Models:");
         drawMenu(editor);
+		drawLightProperty(editor);
         drawObjectList(editor);
         drawAddCubeBtn(editor);
         drawAddSphereBtn(editor);

@@ -2,7 +2,7 @@
 #define __UGL_HPP__
 #include "UPHYSIC.hpp"
 #include <corecrt_math_defines.h>
-
+#define SELECTION_THRESHOLD 1.0f
 
 inline unsigned int compileShader(unsigned int type, const char* source) {
 	unsigned int id = glCreateShader(type);
@@ -21,18 +21,40 @@ inline unsigned int compileShader(unsigned int type, const char* source) {
 	return id;
 }
 
-inline unsigned int createShader(const char* vertexShader, const char* fragmentShader) {
+inline unsigned int createShader(const char* vertexShader, const char* fragmentShader, const char* computeShader = nullptr) {
 	unsigned int program = glCreateProgram();
 	unsigned int vs = compileShader(GL_VERTEX_SHADER, vertexShader);
 	unsigned int fs = compileShader(GL_FRAGMENT_SHADER, fragmentShader);
 
 	glAttachShader(program, vs);
 	glAttachShader(program, fs);
+
+	unsigned int cs;
+	if (computeShader) {
+		cs = compileShader(GL_COMPUTE_SHADER, computeShader);
+		glAttachShader(program, cs);
+	}
+
 	glLinkProgram(program);
+	int result;
+	glGetProgramiv(program, GL_LINK_STATUS, &result);
+	if (result == GL_FALSE) {
+		int length;
+		glGetProgramiv(program, GL_INFO_LOG_LENGTH, &length);
+		char* message = (char*)alloca(length * sizeof(char));
+		glGetProgramInfoLog(program, length, &length, message);
+		std::cout << "Failed to link program:\n" << message << std::endl;
+		glDeleteProgram(program);
+		return 0;
+	}
 	glValidateProgram(program);
 
 	glDeleteShader(vs);
 	glDeleteShader(fs);
+	if (computeShader) {
+		glDeleteShader(cs);
+	}
+
 	return program;
 }
 
@@ -63,34 +85,30 @@ struct CAMERA {
 
 	void moveForward(float deltaTime) {
 		_eye += _speed * _front * deltaTime;
-		CameraPrintf();
 	}
 
 	void moveBackward(float deltaTime) {
 		_eye -= _speed * _front * deltaTime;
-		CameraPrintf();
 	}
 
 	void moveLeft(float deltaTime) {
 		_eye -= glm::normalize(glm::cross(_front, _up)) * _speed * deltaTime;
-		CameraPrintf();
 	}
 
 	void moveRight(float deltaTime) {
 		_eye += glm::normalize(glm::cross(_front, _up)) * _speed * deltaTime;
-		CameraPrintf();
 	}
 
 	void moveUp(float deltaTime) {
 		_eye += _speed * _up * deltaTime;
-		CameraPrintf();
 	}
 
 	void moveDown(float deltaTime) {
 		_eye -= _speed * _up * deltaTime;
 		CameraPrintf();
 	}
-	void rotation(float yawOffset, float pitchOffset) {
+
+	void rotate(float yawOffset, float pitchOffset) {
 		yawOffset *= _rot_speed;
 		pitchOffset *= _rot_speed;
 		printf("Yaw: %f, Pitch: %f\n", yawOffset, pitchOffset);
@@ -108,6 +126,7 @@ struct CAMERA {
 		_front = glm::vec3(transformedVec);
 		CameraPrintf();
 	}
+
 	int getViewportWidth() const {
 		return _viewportWidth;
 	}
@@ -139,11 +158,116 @@ struct LIGHT {
 	glm::vec3 _pos = { 1.0f, 10.0f, 15.0f };
 	glm::vec3 _color = { 1.0f, 1.0f, 1.0f };
 
-	void DRAW() {
+	glm::vec3 getPosition() const {
+		return _pos;
+	}
+	glm::vec3 getColor() const {
+		return _color;
+	}
+	void setPosition(glm::vec3 position) {
+		_pos = position;
+	}
+	void setColor(glm::vec3 color) {
+		_color = color;
+	}
+
+	void SET() {
 		GLfloat lightPosition[] = { _pos.x, _pos.y, _pos.z, 1.0f };
 		GLfloat lightColor[] = { _color.x, _color.y, _color.z, 1.0f };
 		glLightfv(GL_LIGHT0, GL_POSITION, lightPosition);
 		glLightfv(GL_LIGHT0, GL_DIFFUSE, lightColor);
+	}
+	void DRAW() {
+		glPushMatrix();
+		glTranslatef(_pos.x, _pos.y, _pos.z);
+		glColor3f(_color.x, _color.y, _color.z);
+		glutWireSphere(2.0f, 10, 10);
+		glPopMatrix();
+	}
+};
+
+struct MODEL_AXIS {
+	glm::vec3 color;
+	glm::vec3 start;
+	glm::vec3 dir;
+
+	glm::vec3 convertMousePosTo3DRay(const glm::vec2& mousePos, CAMERA& camera) {
+		// Convert the mouse's 2D position to normalized device coordinates
+		glm::vec2 ndcPos;
+		ndcPos.x = (2.0f * mousePos.x) / camera._viewportWidth - 1.0f;
+		ndcPos.y = 1.0f - (2.0f * mousePos.y) / camera._viewportHeight;
+
+		// Convert from normalized device coordinates to clip coordinates
+		glm::vec4 clipPos(ndcPos.x, ndcPos.y, -1.0f, 1.0f);
+
+		// Convert from clip coordinates to eye coordinates
+		glm::vec4 eyePos = glm::inverse(camera.getProjectionMatrix()) * clipPos;
+		eyePos.z = -1.0f;
+		eyePos.w = 0.0f;
+
+		// Convert from eye coordinates to world coordinates
+		glm::vec3 worldPos = glm::inverse(camera.getViewMatrix()) * eyePos;
+
+		return glm::normalize(worldPos);
+	}
+
+	float distanceBetweenRayAndLine(const glm::vec3& rayOrigin, const glm::vec3& rayDirection, const glm::vec3& lineStart, const glm::vec3& lineEnd) {
+		// Calculate the cross product of the ray direction and the line direction
+		glm::vec3 crossProduct = glm::cross(rayDirection, lineEnd - lineStart);
+
+		// Calculate the distance between the ray origin and the line start
+		glm::vec3 distanceVector = rayOrigin - lineStart;
+
+		// The distance between the ray and the line is the magnitude of the cross product divided by the magnitude of the line direction
+		return glm::length(crossProduct) / glm::length(lineEnd - lineStart);
+	}
+
+	glm::vec3 closestPointOnLineToRay(const glm::vec3& rayOrigin, const glm::vec3& rayDirection, const glm::vec3& lineStart, const glm::vec3& lineEnd) {
+		// Calculate the vector from the ray origin to the line start
+		glm::vec3 lineVector = lineStart - rayOrigin;
+
+		// Project the line vector onto the ray direction
+		float t = glm::dot(lineVector, rayDirection);
+
+		// Calculate the closest point on the line to the ray
+		return rayOrigin + t * rayDirection;
+	}
+
+	glm::vec3 getStart() const {
+		return start;
+	}
+	void setStart(const glm::vec3& start) {
+		this->start = start;
+	}
+
+	void SET(const glm::vec3& color, const glm::vec3& start, const glm::vec3& dir) {
+		this->color = color;
+		this->start = start;
+		this->dir = dir;
+	}
+	void DRAW() {
+		glColor3f(color.x, color.y, color.z);
+		glPushMatrix();
+		glTranslatef(start.x, start.y, start.z);
+		if (dir.x >= 1.0f)
+			glScalef(3.0, 0.1f, 0.1f);
+		else if (dir.y >= 1.0f)
+			glScalef(0.1, 3.0f, 0.1f);
+		else if (dir.z >= 1.0f)
+			glScalef(0.1, 0.1f, 3.0f);
+		glutSolidCube(1.0f); 
+		glPopMatrix(); 
+	}
+	bool isHovered(const glm::vec2& mousePos, CAMERA& camera) {
+		glm::vec3 rayOrigin = camera.getPosition();
+		glm::vec3 rayDirection = convertMousePosTo3DRay(mousePos, camera);
+		float distance = distanceBetweenRayAndLine(rayOrigin, rayDirection, start, start + dir);
+		return distance < SELECTION_THRESHOLD;
+	}
+	glm::vec3 drag(const glm::vec2& mousePos, CAMERA& camera) {
+		glm::vec3 rayOrigin = camera.getPosition();
+		glm::vec3 rayDirection = convertMousePosTo3DRay(mousePos, camera);
+		return closestPointOnLineToRay(rayOrigin, rayDirection, start, start + dir);
 	}
 };
 
@@ -152,6 +276,10 @@ struct MODEL {
 public:
 	COLLIDER_TYPE colliderType = COLLIDER_TYPE::NONE;
 	std::shared_ptr<COLLIDER> collider;
+	std::shared_ptr<PHYSICS> physics;
+	std::shared_ptr<MODEL_AXIS> axisX;
+	std::shared_ptr<MODEL_AXIS> axisY;
+	std::shared_ptr<MODEL_AXIS> axisZ;
 	virtual void Init(const std::string&) = 0;
 
 	std::string getName() const {
@@ -191,10 +319,12 @@ public:
 	void setShaderProgram() {
 		std::string vertexShaderSource = ReadShaderFile("VertexShader.vert");
 		std::string fragmentShaderSource = ReadShaderFile("FragmentShader.frag");
+		//std::string rayShaderSource = ReadShaderFile("ComputeShader.ray");
 		shaderProgram = createShader(vertexShaderSource.c_str(), fragmentShaderSource.c_str());
 	}
 	void setCollision(bool collision) const {
-		collider->collision = collision;
+		if (collider != nullptr)
+			collider->collision = collision;
 	}
 	void setCollider() {
 		if (colliderType == COLLIDER_TYPE::BOX){
@@ -205,6 +335,52 @@ public:
 			collider = std::make_shared<SPHERE_COLLIDER>();
 			std::static_pointer_cast<SPHERE_COLLIDER>(collider)->SET(_pos);
 		}
+	}
+	void setPhysics(){
+		physics = std::make_shared<PHYSICS>();
+	}
+	void setAxis() {
+		axisX = std::make_shared<MODEL_AXIS>();
+		axisY = std::make_shared<MODEL_AXIS>();
+		axisZ = std::make_shared<MODEL_AXIS>();
+		axisX->SET({ 1.0f, 0.0f, 0.0f }, _pos, glm::vec3(3.0f, 0.0f, 0.0f));
+		axisY->SET({ 0.0f, 1.0f, 0.0f }, _pos, glm::vec3(0.0f, 3.0f, 0.0f));
+		axisZ->SET({ 0.0f, 0.0f, 1.0f }, _pos, glm::vec3(0.0f, 0.0f, 3.0f));
+	}
+
+	void SAVE(const char* filename) {
+		std::ofstream file(filename);
+		file << "Name: " << name << std::endl;
+		file << "Color: " << _color.x << " " << _color.y << " " << _color.z << std::endl;
+		file << "Position: " << _pos.x << " " << _pos.y << " " << _pos.z << std::endl;
+		file << "RotationAxis: " << _rotationAxis.x << " " << _rotationAxis.y << " " << _rotationAxis.z << std::endl;
+		file << "Scale: " << _scale.x << " " << _scale.y << " " << _scale.z << std::endl;
+		file.close();
+	}
+	void LOAD(const char* filename) {
+		std::ifstream file(filename);
+		std::string line;
+		while (std::getline(file, line)) {
+			std::istringstream iss(line);
+			std::string type;
+			iss >> type;
+			if (type == "Name:") {
+				iss >> name;
+			}
+			else if (type == "Color:") {
+				iss >> _color.x >> _color.y >> _color.z;
+			}
+			else if (type == "Position:") {
+				iss >> _pos.x >> _pos.y >> _pos.z;
+			}
+			else if (type == "RotationAxis:") {
+				iss >> _rotationAxis.x >> _rotationAxis.y >> _rotationAxis.z;
+			}
+			else if (type == "Scale:") {
+				iss >> _scale.x >> _scale.y >> _scale.z;
+			}
+		}
+		file.close();
 	}
 
 	bool InterSection(glm::vec3 rayOrigin, glm::vec3 rayDirection) const {
@@ -263,7 +439,6 @@ public:
 		size_t vertexCount = vertices.size() / 3;
 		// 쉐이더 설정
 		glUseProgram(0);
-		setShaderProgram();
 		glUseProgram(shaderProgram);
 		// 모델 행렬 설정
 		glm::mat4 model = glm::mat4(1.0f);
@@ -330,6 +505,7 @@ protected:
 struct CUBE : public MODEL
 {
 	void Init(const std::string&) final {
+		setShaderProgram();
 		vertices = {
 			// Front face
 			-0.5f, -0.5f,  0.5f,  // Bottom-left
@@ -429,9 +605,6 @@ struct CUBE : public MODEL
 			0.0f, -1.0f,  0.0f   // Top-right
 		};
 		name = "Cube";
-
-		collider = std::make_shared<BOX_COLLIDER>();
-		std::dynamic_pointer_cast<BOX_COLLIDER>(collider)->SET(_pos, _scale, glm::mat3(1.0f));
 	}
 };
 
@@ -537,6 +710,7 @@ struct FBX : public MODEL
 
 	void Init(const std::string& filename) final {
 		name = filename;
+		setShaderProgram();
 		LoadFbx(filename);
 	}
 };
