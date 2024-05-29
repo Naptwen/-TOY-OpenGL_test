@@ -14,7 +14,7 @@
 - AutoCad FBX api for loading model
 - I/O Input system
 - Camera walking
-- Collision System
+- Collision System (OBB, SPHERE)
   
 ✨ Working (March, 30, 2024.)
 - Physics algorithm for newton's law
