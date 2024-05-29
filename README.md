@@ -17,6 +17,7 @@
 - Collision System (OBB, SPHERE)
   
 ✨ Working (March, 30, 2024.)
+- GJK algorithm
 - Physics algorithm for newton's law
 
 👽 Future 
