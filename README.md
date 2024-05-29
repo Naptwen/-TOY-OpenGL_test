@@ -22,6 +22,8 @@
 👽 Future 
 - Object Data manager
 - Save & Load custom data format
+- Sound System
+- Animation controlling
 - Socket Network
 - Machine Learning
 - Socket Network server
