@@ -1,4 +1,7 @@
-It is old version
+It is old version (deprecated project)
+The new version has new architecture, pipeline, tool and algorithms.
+
+
 🤖 Requirement
 - C++ 20 higher
 - OpenGL 
